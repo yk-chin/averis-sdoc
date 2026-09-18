@@ -1,0 +1,17 @@
+# 主办方数据集 —— 绝不提交（inbox / attachments / ground_truth）
+data/
+
+# pipeline 输出
+submission*.json
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 密钥与本机配置
+.env
+.claude/settings.local.json
+
+# eval 图表
+evals/*.png
