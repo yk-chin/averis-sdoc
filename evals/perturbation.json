@@ -1,0 +1,193 @@
+{
+ "baseline": {
+  "final_score": 1.0,
+  "macro_f1": 1.0,
+  "defect_f1": 1.0,
+  "field_f1": 1.0,
+  "end_to_end": 1.0,
+  "esc_precision": 1.0,
+  "esc_recall": 1.0,
+  "pred_review": 20
+ },
+ "P1": {
+  "desc": "字段标签同义轮换",
+  "coverage": {
+   "txt": [
+    192,
+    192
+   ],
+   "xlsx": [
+    22,
+    22
+   ],
+   "docx": [
+    8,
+    8
+   ],
+   "pdf": [
+    0,
+    28
+   ],
+   "lines_changed": 1524
+  },
+  "final_score": 1.0,
+  "macro_f1": 1.0,
+  "defect_f1": 1.0,
+  "field_f1": 1.0,
+  "end_to_end": 1.0,
+  "esc_precision": 1.0,
+  "esc_recall": 1.0,
+  "pred_review": 20
+ },
+ "P2": {
+  "desc": "公司后缀写法 (SI 变体A / BL 变体B)",
+  "coverage": {
+   "txt": [
+    150,
+    192
+   ],
+   "xlsx": [
+    21,
+    22
+   ],
+   "docx": [
+    4,
+    8
+   ],
+   "pdf": [
+    0,
+    28
+   ],
+   "lines_changed": 350
+  },
+  "final_score": 1.0,
+  "macro_f1": 1.0,
+  "defect_f1": 1.0,
+  "field_f1": 1.0,
+  "end_to_end": 1.0,
+  "esc_precision": 1.0,
+  "esc_recall": 1.0,
+  "pred_review": 20
+ },
+ "P3": {
+  "desc": "重量单位 (SI→MT / BL→LBS)",
+  "coverage": {
+   "txt": [
+    185,
+    192
+   ],
+   "xlsx": [
+    22,
+    22
+   ],
+   "docx": [
+    3,
+    8
+   ],
+   "pdf": [
+    0,
+    28
+   ],
+   "lines_changed": 210
+  },
+  "final_score": 1.0,
+  "macro_f1": 1.0,
+  "defect_f1": 1.0,
+  "field_f1": 1.0,
+  "end_to_end": 1.0,
+  "esc_precision": 1.0,
+  "esc_recall": 1.0,
+  "pred_review": 20
+ },
+ "P4a": {
+  "desc": "港口：SI 只留名字",
+  "coverage": {
+   "txt": [
+    93,
+    192
+   ],
+   "xlsx": [
+    0,
+    22
+   ],
+   "docx": [
+    0,
+    8
+   ],
+   "pdf": [
+    0,
+    28
+   ],
+   "lines_changed": 186
+  },
+  "final_score": 1.0,
+  "macro_f1": 1.0,
+  "defect_f1": 1.0,
+  "field_f1": 1.0,
+  "end_to_end": 1.0,
+  "esc_precision": 1.0,
+  "esc_recall": 1.0,
+  "pred_review": 20
+ },
+ "P4b": {
+  "desc": "港口：BL 只留 LOCODE（仅一致对）",
+  "coverage": {
+   "txt": [
+    88,
+    192
+   ],
+   "xlsx": [
+    0,
+    22
+   ],
+   "docx": [
+    0,
+    8
+   ],
+   "pdf": [
+    0,
+    28
+   ],
+   "lines_changed": 158
+  },
+  "final_score": 0.6804964539007092,
+  "macro_f1": 1.0,
+  "defect_f1": 0.6524822695035462,
+  "field_f1": 0.6101694915254238,
+  "end_to_end": 0.5,
+  "esc_precision": 1.0,
+  "esc_recall": 1.0,
+  "pred_review": 20
+ },
+ "P5": {
+  "desc": "附件文件名去掉 _SI/_BL",
+  "coverage": {
+   "txt": [
+    0,
+    0
+   ],
+   "xlsx": [
+    0,
+    0
+   ],
+   "docx": [
+    0,
+    0
+   ],
+   "pdf": [
+    0,
+    0
+   ],
+   "lines_changed": 0,
+   "renamed": 250
+  },
+  "final_score": 0.3,
+  "macro_f1": 1.0,
+  "defect_f1": 0.0,
+  "field_f1": 0.0,
+  "end_to_end": 0.0,
+  "esc_precision": 0.15503875968992248,
+  "esc_recall": 1.0,
+  "pred_review": 129
+ }
+}
