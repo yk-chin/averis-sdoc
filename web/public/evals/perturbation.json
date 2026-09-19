@@ -1,0 +1,193 @@
+{
+ "baseline": {
+  "final_score": 1.0,
+  "macro_f1": 1.0,
+  "defect_f1": 1.0,
+  "field_f1": 1.0,
+  "end_to_end": 1.0,
+  "esc_precision": 1.0,
+  "esc_recall": 1.0,
+  "pred_review": 20
+ },
+ "P1": {
+  "desc": "field-label synonyms rotated",
+  "coverage": {
+   "txt": [
+    192,
+    192
+   ],
+   "xlsx": [
+    22,
+    22
+   ],
+   "docx": [
+    8,
+    8
+   ],
+   "pdf": [
+    0,
+    28
+   ],
+   "lines_changed": 1524
+  },
+  "final_score": 1.0,
+  "macro_f1": 1.0,
+  "defect_f1": 1.0,
+  "field_f1": 1.0,
+  "end_to_end": 1.0,
+  "esc_precision": 1.0,
+  "esc_recall": 1.0,
+  "pred_review": 20
+ },
+ "P2": {
+  "desc": "company-suffix spelling (SI variant A / BL variant B)",
+  "coverage": {
+   "txt": [
+    150,
+    192
+   ],
+   "xlsx": [
+    21,
+    22
+   ],
+   "docx": [
+    4,
+    8
+   ],
+   "pdf": [
+    0,
+    28
+   ],
+   "lines_changed": 350
+  },
+  "final_score": 1.0,
+  "macro_f1": 1.0,
+  "defect_f1": 1.0,
+  "field_f1": 1.0,
+  "end_to_end": 1.0,
+  "esc_precision": 1.0,
+  "esc_recall": 1.0,
+  "pred_review": 20
+ },
+ "P3": {
+  "desc": "weight units (SI->MT / BL->LBS)",
+  "coverage": {
+   "txt": [
+    185,
+    192
+   ],
+   "xlsx": [
+    22,
+    22
+   ],
+   "docx": [
+    3,
+    8
+   ],
+   "pdf": [
+    0,
+    28
+   ],
+   "lines_changed": 210
+  },
+  "final_score": 1.0,
+  "macro_f1": 1.0,
+  "defect_f1": 1.0,
+  "field_f1": 1.0,
+  "end_to_end": 1.0,
+  "esc_precision": 1.0,
+  "esc_recall": 1.0,
+  "pred_review": 20
+ },
+ "P4a": {
+  "desc": "ports: SI name only",
+  "coverage": {
+   "txt": [
+    93,
+    192
+   ],
+   "xlsx": [
+    0,
+    22
+   ],
+   "docx": [
+    0,
+    8
+   ],
+   "pdf": [
+    0,
+    28
+   ],
+   "lines_changed": 186
+  },
+  "final_score": 1.0,
+  "macro_f1": 1.0,
+  "defect_f1": 1.0,
+  "field_f1": 1.0,
+  "end_to_end": 1.0,
+  "esc_precision": 1.0,
+  "esc_recall": 1.0,
+  "pred_review": 20
+ },
+ "P4b": {
+  "desc": "ports: BL LOCODE only (consistent pairs)",
+  "coverage": {
+   "txt": [
+    86,
+    192
+   ],
+   "xlsx": [
+    0,
+    22
+   ],
+   "docx": [
+    0,
+    8
+   ],
+   "pdf": [
+    0,
+    28
+   ],
+   "lines_changed": 147
+  },
+  "final_score": 1.0,
+  "macro_f1": 1.0,
+  "defect_f1": 1.0,
+  "field_f1": 1.0,
+  "end_to_end": 1.0,
+  "esc_precision": 1.0,
+  "esc_recall": 1.0,
+  "pred_review": 20
+ },
+ "P5": {
+  "desc": "attachment names without _SI/_BL",
+  "coverage": {
+   "txt": [
+    0,
+    0
+   ],
+   "xlsx": [
+    0,
+    0
+   ],
+   "docx": [
+    0,
+    0
+   ],
+   "pdf": [
+    0,
+    0
+   ],
+   "lines_changed": 0,
+   "renamed": 250
+  },
+  "final_score": 1.0,
+  "macro_f1": 1.0,
+  "defect_f1": 1.0,
+  "field_f1": 1.0,
+  "end_to_end": 1.0,
+  "esc_precision": 1.0,
+  "esc_recall": 1.0,
+  "pred_review": 20
+ }
+}

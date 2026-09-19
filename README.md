@@ -5,6 +5,7 @@ Averis × Monash Hackathon 2026 — shipping-document intake for a BPO documenta
 An email arrives. ShipDoc classifies it, parses the attached Shipping Instruction (SI) and draft Bill of Lading (BL), compares the seven fields that matter, and escalates only what a person genuinely needs to look at — **without creating false alarms**.
 
 **Live API:** https://shipdoc-api-705106212012.asia-southeast1.run.app (Cloud Run, Singapore; LLM via Vertex AI)
+**Console:** `web/` — Next.js on Vercel (inbox · diff report with raw → normalised view · exception / incomplete queues · eval dashboard)
 
 ## Results on the organiser's v2 dataset (520 emails)
 
@@ -80,6 +81,26 @@ python pipeline/run.py ./data submission.json      # pipeline → submission.jso
 python -m pytest tests/ -q                          # 78 tests
 python -m uvicorn api.main:app --port 8090          # the API locally
 ```
+
+## Console (`web/`)
+
+A Next.js 15 app (no UI library; the same design tokens as the API's demo page, self-hosted Source Sans 3) that reads the Cloud Run API:
+
+| Page | What it shows |
+|---|---|
+| `/` Inbox | The 520 processed emails from `GET /reports?prefix=email_`: category / status filters, search, status chips, attachment count, rule vs LLM |
+| `/emails/{id}` Diff report | SI and draft BL side by side for the seven fields; hover (or the "Show normalisation" switch) reveals **raw → normalised** for every value plus the comparator's reason and confidence — formatting-only differences are `normalized`, never a mismatch |
+| `/queues` | Two independent queues: **Exception queue** (`unreadable` / `wrong_doc_type` / `missing_value` — something arrived and could not be read, recognised or decided) and **Incomplete requests** (`missing_attachment` — nothing usable attached, chase the sender) |
+| `/eval` | Scores, trajectory, per-class / confusion / field-level metrics, perturbations, and the three charts from `scripts_calibration.py` |
+
+```bash
+cd web && npm install && npm run dev        # http://localhost:3000, API_BASE in .env.local (defaults to the live API)
+npm run sync-evals                           # copy evals/*.json|jsonl|png into web/public/evals
+```
+
+Browser calls go through a Next.js rewrite (`/api/*` → `API_BASE`), so the API needs no CORS. Deploy on Vercel with Root Directory `web` and the environment variable `API_BASE`.
+
+The inbox data is the organiser's dataset loaded into our own Firestore with `scripts_load_cloud.py ./data --api <url>` (3 batches through `POST /batch`; the dataset itself never enters the repository).
 
 ## Self-evaluation (black box)
 
