@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>shipdoc API test</title>
+<style>
+ body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;margin:0;padding:16px;background:#f9f9f7;color:#0b0b0b;max-width:720px;margin:auto}
+ h1{font-size:18px;margin:8px 0 4px}small{color:#52514e}
+ label{display:block;margin-top:12px;font-size:13px;color:#52514e}
+ input,textarea{width:100%;box-sizing:border-box;padding:8px;border:1px solid #c3c2b7;border-radius:6px;font-size:14px;background:#fff}
+ textarea{min-height:110px;font-family:inherit}
+ button{margin-top:14px;padding:10px 16px;border:0;border-radius:6px;background:#2a78d6;color:#fff;font-size:15px}
+ button:disabled{opacity:.5}
+ pre{background:#fff;border:1px solid #e1e0d9;border-radius:6px;padding:10px;font-size:12px;overflow:auto;white-space:pre-wrap}
+ .row{display:flex;gap:8px}.row>*{flex:1}
+ .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;background:#e1e0d9;margin-right:6px}
+</style></head><body>
+<h1>shipdoc API <small id="ver"></small></h1>
+<small>贴一封邮件，选附件（SI / BL 的 txt / pdf / docx / xlsx），点「处理」。GET /health · POST /process · POST /batch · GET /report/{id}</small>
+<label>X-API-Key（服务要求时填）</label><input id="key" placeholder="留空 = 不带">
+<div class="row"><div><label>email_id</label><input id="eid" value="demo-001"></div><div><label>from</label><input id="from" value="ops@example.com"></div></div>
+<label>subject</label><input id="subj" value="TO CONFIRM DOCS _ 5RSG-00133 _ CALLAO_PERU">
+<label>body</label><textarea id="body">Hi,
+
+Attached are the SI and draft BL for OC 5RSG-00133. Please check the details and confirm.
+
+Best Regards</textarea>
+<label>attachments</label><input id="files" type="file" multiple>
+<button id="go">处理 /process</button> <button id="hb" style="background:#52514e">健康检查 /health?deep=1</button>
+<div id="sum" style="margin-top:12px"></div>
+<pre id="out">（结果显示在这里）</pre>
+<script>
+const $=id=>document.getElementById(id);
+fetch('/health').then(r=>r.json()).then(h=>$('ver').textContent='v'+h.version+' · llm='+h.llm_provider).catch(()=>{});
+const b64=f=>new Promise((ok,err)=>{const r=new FileReader();r.onload=()=>ok(r.result.split(',')[1]);r.onerror=err;r.readAsDataURL(f)});
+$('go').onclick=async()=>{
+  $('go').disabled=true;$('out').textContent='处理中…';$('sum').innerHTML='';
+  try{
+    const atts=[];for(const f of $('files').files){atts.push({name:f.name,content_base64:await b64(f)})}
+    const payload={email_id:$('eid').value,from:$('from').value,subject:$('subj').value,body:$('body').value,attachments:atts};
+    const h={'Content-Type':'application/json'};if($('key').value)h['X-API-Key']=$('key').value;
+    const r=await fetch('/process',{method:'POST',headers:h,body:JSON.stringify(payload)});
+    const j=await r.json();
+    if(r.ok){const d=j.decision;$('sum').innerHTML=`<span class="pill">${d.category}</span><span class="pill">${d.status}</span>`+(d.review_reason?`<span class="pill">${d.review_reason}</span>`:'')+(d.defect_fields.length?`<span class="pill">defects: ${d.defect_fields.join(', ')}</span>`:'')+`<span class="pill">by ${d.decided_by}</span><span class="pill">${j.elapsed_ms} ms</span>`;
+      $('out').textContent=(j.evidence.report_text?j.evidence.report_text+'\n\n':'')+JSON.stringify(j,null,2);}
+    else $('out').textContent='HTTP '+r.status+'\n'+JSON.stringify(j,null,2);
+  }catch(e){$('out').textContent='ERROR '+e}
+  $('go').disabled=false;};
+$('hb').onclick=async()=>{$('out').textContent='检查中…';const r=await fetch('/health?deep=1');$('out').textContent=JSON.stringify(await r.json(),null,2)};
+</script></body></html>

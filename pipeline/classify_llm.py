@@ -18,7 +18,7 @@ LLM 兜底分类器 —— 只在规则置信度不够时被调用
   LLM_MIN_INTERVAL  两次调用最小间隔秒数，免费额度限流用，默认 0
 """
 from __future__ import annotations
-import hashlib, json, logging, os, pathlib, sys, threading, time
+import hashlib, json, logging, os, pathlib, re, sys, threading, time
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, ValidationError
@@ -257,8 +257,9 @@ _cooldown_until: dict[str, float] = {}
 
 
 def _model_chain() -> list[str]:
+    """逗号或分号分隔（Cloud Run --set-env-vars 用逗号分隔键值对，值里用分号）。"""
     raw = os.getenv("GEMINI_MODEL", "gemini-3.6-flash,gemini-3.5-flash,gemini-3.5-flash-lite")
-    return [m.strip() for m in raw.split(",") if m.strip()]
+    return [m.strip() for m in re.split(r"[,;]", raw) if m.strip()]
 
 
 def _available_models() -> list[str]:

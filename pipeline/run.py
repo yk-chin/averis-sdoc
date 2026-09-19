@@ -61,19 +61,31 @@ def classify_attachments(root, atts):
     return slots, unassigned
 
 
-def decide(email, root) -> dict:
+def decide(email, root, *, details: dict | None = None) -> dict:
+    """返回 submission 记录。传入 details={} 时，把判定依据写进去（API / 人工复核界面用）：
+    classification{rule_category, rule_confidence, llm}、attachments{SI,BL}、fields[FieldResult…]"""
     atts = email.get("attachments", []) or []
     slots, unassigned = classify_attachments(root, atts)
     has_si, has_bl = slots["SI"] is not None, slots["BL"] is not None
     si, si_src = slots["SI"] or (None, None)
     bl, bl_src = slots["BL"] or (None, None)
     category, decided_by, conf = classify_email(email, has_si, has_bl)
+    if details is not None:
+        details["classification"] = {"rule_category": category, "rule_confidence": conf, "llm": None}
+        details["attachments"] = {
+            k: (None if v is None else {"source": v[1], "doc_type": v[0].doc_type if v[0] else None,
+                                        "readable": bool(v[0] and v[0].readable),
+                                        "fields": v[0].fields if v[0] else {}})
+            for k, v in slots.items()}
+        details["fields"] = []
 
     # 规则优先、LLM 兜底：只在规则拿不准时调用；LLM 失败则保留规则结果
     if conf < LLM_THRESHOLD:
         llm = classify_with_llm(email)
         if llm is not None:
             category, decided_by = llm.category, "llm"
+            if details is not None:
+                details["classification"]["llm"] = llm.model_dump()
 
     out = {"category": category, "status": "OK", "review_reason": None,
            "has_defect": False, "defect_fields": [], "decided_by": decided_by}
@@ -124,6 +136,9 @@ def decide(email, root) -> dict:
 
     # --- 确定性比对 ---
     rep = compare_documents(email["email_id"], si.fields, bl.fields)
+    if details is not None:
+        details["fields"] = [r.to_dict() for r in rep.results]
+        details["report_text"] = rep.render()
     undetermined = [r.field for r in rep.results if r.outcome is Outcome.UNDETERMINED]
     if undetermined:
         out.update(status="NEEDS_REVIEW", review_reason="missing_value")
