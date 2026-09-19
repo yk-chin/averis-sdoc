@@ -33,8 +33,11 @@ class Outcome(str, Enum):
     UNDETERMINED = "undetermined"      # cannot decide reliably -> human
 
 
-# Weight tolerance: 0.1 %, at least 0.5 kg. Absorbs unit-conversion and rounding error
-# without hiding real differences (3 vs 4 containers, 22000 vs 23000 kg are far beyond it).
+# Weight tolerance POLICY - our engineering judgement, not a requirement of the brief:
+# a gross-weight difference within max(0.5 kg, 0.1 % of the SI weight) is treated as a
+# formatting / rounding difference (MT and LBS conversion, thousands rounding), not a defect.
+# Every planted defect in the v2 data is >= 500 kg. The verdict reason always states the
+# difference and the tolerance, so a swallowed 10 kg is visible in the report. docs/REVIEW_REASONS.md.
 WEIGHT_REL_TOL = 0.001
 WEIGHT_ABS_TOL = 0.5
 
@@ -155,7 +158,8 @@ def compare_field(
     tol = max(WEIGHT_ABS_TOL, abs(a) * WEIGHT_REL_TOL)
     if abs(a - b) <= tol:
         return mk(Outcome.NORMALIZED_MATCH, a, b,
-                  f"same weight (diff {abs(a-b):.2f} kg within tolerance {tol:.2f} kg)", 0.98)
+                  f"diff {abs(a-b):.2f} kg, policy tolerance {tol:.2f} kg "
+                  f"({WEIGHT_REL_TOL:.1%}, min {WEIGHT_ABS_TOL:g} kg) -> treated as a match", 0.98)
     return mk(Outcome.MISMATCH, a, b,
               f"gross weight differs: SI {a:g} kg / BL {b:g} kg (diff {abs(a-b):g} kg)", 0.99)
 

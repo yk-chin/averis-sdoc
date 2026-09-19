@@ -116,3 +116,13 @@ def test_empty_value_followed_by_a_label_line_stays_blank():
 def test_placeholder_value_stays_blank():
     doc = parse_text_document("SHIPPING INSTRUCTION\nGross Weight: N/A\nPort of Discharge: TBA\n")
     assert doc.fields["gross_weight_kg"] is None and doc.fields["port_of_discharge"] is None
+
+
+# ---------------------------------------------------------------- F5: the weight tolerance is an explicit, visible policy
+def test_weight_within_tolerance_states_diff_and_policy():
+    r = compare_field("gross_weight_kg", "22000 KG", "22010 KG")
+    assert r.outcome is Outcome.NORMALIZED_MATCH
+    assert "diff 10.00 kg" in r.reason and "policy tolerance 22.00 kg" in r.reason and "treated as a match" in r.reason
+    r = compare_field("gross_weight_kg", "22000 KG", "22,000.00 KGS")
+    assert r.outcome is Outcome.NORMALIZED_MATCH and "diff 0.00 kg" in r.reason
+    assert compare_field("gross_weight_kg", "22000 KG", "22500 KG").outcome is Outcome.MISMATCH   # beyond 22 kg
