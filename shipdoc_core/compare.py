@@ -112,6 +112,11 @@ def compare_field(
             return mk(Outcome.UNDETERMINED, a, b, "empty after normalisation, cannot compare", 0.3)
         if a == b:
             return mk(Outcome.NORMALIZED_MATCH, a, b, "same party, different spelling", 0.98)
+        # One name is a proper prefix of the other ("APRIL FINE PAPER TRADING" vs
+        # "APRIL FINE PAPER TRADING MIDDLE EAST FZE"): the longer one carries an extra legal
+        # designation, i.e. a different legal entity. A structural relation, not a similarity score.
+        if a.startswith(b + " ") or b.startswith(a + " "):
+            return mk(Outcome.MISMATCH, a, b, "one name is a prefix of the other: different legal entity", 0.95)
         r = _fuzzy(a, b)
         if r >= PARTY_FUZZY_HIGH:
             return mk(Outcome.NORMALIZED_MATCH, a, b,

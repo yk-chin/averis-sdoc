@@ -81,3 +81,21 @@ def test_parse_doc_applies_deinterleave_to_notify_party():
     doc = parse_text_document("BILL OF LADING INSTRUCTION\nShipper: X\nCONSIGNEE: CERIEX\n"
                               "Notify: Party/Intermediate ConsCigEnReIEeX\nPOL: SINGAPORE\n")
     assert doc.fields["notify_party"] == "CERIEX"
+
+
+# ---------------------------------------------------------------- R3: prefix relation beats the similarity score
+def test_prefix_related_names_are_different_legal_entities():
+    # email_145: similarity is exactly 0.750 - the verdict must not depend on that coincidence
+    r = compare_field("shipper", "APRIL FINE PAPER TRADING", "APRIL FINE PAPER TRADING (MIDDLE EAST) FZE")
+    assert r.outcome is Outcome.MISMATCH and "prefix" in r.reason
+    r = compare_field("shipper", "APRIL FINE PAPER TRADING (MIDDLE EAST) FZE, DUBAI", "APRIL FINE PAPER TRADING")
+    assert r.outcome is Outcome.MISMATCH
+
+
+def test_prefix_rule_does_not_touch_same_entity_variants():
+    # address after "|" and suffix spellings normalise to the same string -> still NORMALIZED_MATCH
+    r = compare_field("shipper", "APRIL FINE PAPER TRADING (MIDDLE EAST) FZE | #813, 4 EA, DUBAI AIRPORT FREE ZONE",
+                      "APRIL FINE PAPER TRADING (MIDDLE EAST) FZE")
+    assert r.outcome is Outcome.NORMALIZED_MATCH
+    r = compare_field("consignee", "Meridian Logistics Pte. Ltd.", "MERIDIAN LOGISTICS PTE LTD")
+    assert r.outcome is Outcome.NORMALIZED_MATCH
