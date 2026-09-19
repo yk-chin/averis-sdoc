@@ -9,7 +9,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from shipdoc_core.compare import compare_documents, Outcome
 from shipdoc_core.fields import FIELD_KEYS
-from pipeline.parse_doc import parse_text_document, ParsedDoc
+from pipeline.parse_doc import parse_text_document
 from pipeline.parse_office import office_to_text
 from pipeline.classify import classify_email, expects_attachments
 from pipeline.classify_llm import classify_with_llm, STATS as LLM_STATS, MODEL_USAGE
@@ -128,9 +128,7 @@ def decide(email, root, *, details: dict | None = None) -> dict:
         out.update(status="NEEDS_REVIEW", review_reason="wrong_doc_type")
         return out
 
-    missing = [k for k in FIELD_KEYS
-               if k in si.blanks or k in bl.blanks
-               or si.fields.get(k) is None or bl.fields.get(k) is None]
+    missing = [k for k in FIELD_KEYS if si.fields.get(k) is None or bl.fields.get(k) is None]
     if missing:
         out.update(status="NEEDS_REVIEW", review_reason="missing_value")
         return out

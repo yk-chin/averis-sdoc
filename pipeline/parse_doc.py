@@ -60,11 +60,8 @@ def _deinterleave(value: str) -> str:
 @dataclass
 class ParsedDoc:
     doc_type: str                       # SI | BL | INVOICE | PACKING | COO | UNKNOWN
-    fields: dict = field(default_factory=dict)          # {field_key: value}
-    blanks: list = field(default_factory=list)          # fields that hit a blank placeholder
-    near_miss: list = field(default_factory=list)       # records that hit a trap label
+    fields: dict = field(default_factory=dict)          # {field_key: value | None}; None = label present, value blank
     readable: bool = True
-    note: str = ""
 
 
 def detect_doc_type(text: str) -> str:
@@ -79,35 +76,33 @@ def detect_doc_type(text: str) -> str:
 
 def parse_text_document(text: str) -> ParsedDoc:
     if text is None or not text.strip():
-        return ParsedDoc("UNKNOWN", readable=False, note="empty file")
+        return ParsedDoc("UNKNOWN", readable=False)
     # garbage detection: too few printable characters
     printable = sum(1 for c in text if c.isprintable() or c in "\n\r\t")
     if printable / max(len(text), 1) < 0.85:
-        return ParsedDoc("UNKNOWN", readable=False, note="garbled bytes")
+        return ParsedDoc("UNKNOWN", readable=False)
 
     doc = ParsedDoc(detect_doc_type(text))
     lines = text.splitlines()
 
+    # Record model: a label line opens a record; its value is the text after the colon, or - when that
+    # is empty - the next line, provided the next line is not itself a label line. Address continuation
+    # lines after the value are not part of the field (only the legal entity is compared).
     for i, line in enumerate(lines):
         m = LABEL_LINE.match(line)
         if not m:
             continue
-        raw_label, raw_value = m.group(1).strip(), _deinterleave(m.group(2).strip())
+        raw_label, raw_value = m.group(1).strip(), m.group(2).strip()
+        if not raw_value and i + 1 < len(lines):
+            nxt = lines[i + 1].strip()
+            if nxt and not LABEL_LINE.match(nxt):
+                raw_value = nxt
+        raw_value = _deinterleave(raw_value)
         key, is_near = resolve_label(raw_label)
-        if key is None:
+        if key is None or is_near:                    # unknown label, or a trap label (not adopted)
             continue
-        if is_near:
-            doc.near_miss.append({"label": raw_label, "would_be": key, "value": raw_value})
-            continue                                  # trap labels are not adopted
-
-        # continuation: an indented next line without a label is address text, not used here (entity only)
-        if BLANK.match(raw_value):
-            doc.blanks.append(key)
-            doc.fields.setdefault(key, None)
-            continue
-        doc.fields.setdefault(key, raw_value)         # first occurrence wins
+        doc.fields.setdefault(key, None if BLANK.match(raw_value) else raw_value)   # first occurrence wins
 
     if doc.doc_type in ("SI", "BL") and not doc.fields:
         doc.readable = False
-        doc.note = "no parsable fields"
     return doc

@@ -64,8 +64,7 @@ def collect(tree: pathlib.Path, data: pathlib.Path) -> dict:
             continue
         if si.doc_type != "SI" or bl.doc_type != "BL":
             continue
-        if any(k in si.blanks or k in bl.blanks or si.fields.get(k) is None or bl.fields.get(k) is None
-               for k in FIELD_KEYS):
+        if any(si.fields.get(k) is None or bl.fields.get(k) is None for k in FIELD_KEYS):
             continue
         rep = compare_documents(e["email_id"], si.fields, bl.fields)
         out[e["email_id"]] = {

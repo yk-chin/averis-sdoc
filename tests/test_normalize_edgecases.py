@@ -99,3 +99,20 @@ def test_prefix_rule_does_not_touch_same_entity_variants():
     assert r.outcome is Outcome.NORMALIZED_MATCH
     r = compare_field("consignee", "Meridian Logistics Pte. Ltd.", "MERIDIAN LOGISTICS PTE LTD")
     assert r.outcome is Outcome.NORMALIZED_MATCH
+
+
+# ---------------------------------------------------------------- R6: value on the line after "Label:"
+def test_value_on_next_line_is_the_value():
+    doc = parse_text_document("SHIPPING INSTRUCTION\nShipper:\nABC CO LTD\n  12 SOME ROAD\nConsignee: XYZ LLC\n")
+    assert doc.fields["shipper"] == "ABC CO LTD" and doc.fields["consignee"] == "XYZ LLC"
+
+
+def test_empty_value_followed_by_a_label_line_stays_blank():
+    # email_519 / 520 shape: "SHIPPER: " immediately followed by "CONSIGNEE: ..." -> shipper is blank (missing_value)
+    doc = parse_text_document("SHIPPING INSTRUCTION\nSHIPPER: \nCONSIGNEE: UAB NOVAKOPA\nNotify: X\n")
+    assert doc.fields["shipper"] is None and doc.fields["consignee"] == "UAB NOVAKOPA"
+
+
+def test_placeholder_value_stays_blank():
+    doc = parse_text_document("SHIPPING INSTRUCTION\nGross Weight: N/A\nPort of Discharge: TBA\n")
+    assert doc.fields["gross_weight_kg"] is None and doc.fields["port_of_discharge"] is None
