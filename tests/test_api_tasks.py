@@ -243,6 +243,7 @@ def test_reports_lists_slim_rows_with_email_header_and_filters():
     assert client.get("/reports?category=SPAM").json()["count"] == 0
     assert client.get("/reports?status=MISMATCH").json()["count"] == 2
     assert client.get("/reports?review_reason=missing_attachment").json()["count"] == 0
+    assert client.get("/reports?prefix=ls-").json()["count"] == 2 and client.get("/reports?prefix=zz").json()["count"] == 0
     # the stored report keeps the email header (incl. body) after the batch task finished
     rep = client.get("/report/ls-2").json()
     assert rep["email"]["subject"] == "TO CONFIRM DOCS" and "Attached are the SI" in rep["email"]["body"]

@@ -107,7 +107,7 @@ Other evaluation scripts:
 | `POST /batch` | `X-API-Key` | Up to 200 emails, one Cloud Tasks task each (3 attempts, exponential backoff); duplicates by email_id + content hash are skipped |
 | `GET /batch/{id}` | — | Per-email status of a batch |
 | `GET /report/{id}` | — | Result by idempotency key or email_id (Firestore); includes the stored email header (`from`, `subject`, `body`, attachment names) |
-| `GET /reports` | — | Slim rows for the console (decision + email header, never evidence or body); `?limit=&category=&status=&review_reason=` |
+| `GET /reports` | — | Slim rows for the console (decision + email header, never evidence or body); `?limit=&category=&status=&review_reason=&prefix=` |
 | `GET /failures` | `X-API-Key` | Dead-letter queue: emails that failed all 3 attempts, with reason and original input |
 | `POST /failures/{key}/retry` | `X-API-Key` | Retry a dead-lettered email |
 | `POST /report/{id}/review` | `X-API-Key` | Human-in-the-loop: `confirmed` or `corrected` (+ `corrected_fields`, `reviewer`, `reviewer_note`). Stores an audit trail (`original_ai_decision`, `human_decision`, `corrections`, `reviewed_at`, `reviewer`) next to the report; the AI decision is never overwritten and `GET /report/{id}` returns `effective_decision` |
