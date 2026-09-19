@@ -69,7 +69,6 @@ def handle(ctx: TaskContext, payload: dict, attempt: int) -> tuple[bool, Optiona
                 "input": email, "failed_at": now(), "updated": now(),
             })
             ctx.store.update(REPORTS, key, {"status": "FAILED", "error": reason, "attempts": attempt, "updated": now()})
-            _bump_job(ctx, payload.get("batch_id"), "failed")
             return True, reason
         ctx.store.update(REPORTS, key, {"status": "RETRYING", "error": reason, "attempts": attempt, "updated": now()})
         return False, reason
@@ -78,17 +77,7 @@ def handle(ctx: TaskContext, payload: dict, attempt: int) -> tuple[bool, Optiona
                                     "attempts": attempt, "updated": now()})
     if ctx.store.get(DEAD_LETTER, key):
         ctx.store.update(DEAD_LETTER, key, {"status": "RECOVERED", "recovered_at": now(), "updated": now()})
-    _bump_job(ctx, payload.get("batch_id"), "done")
     return True, None
-
-
-def _bump_job(ctx: TaskContext, batch_id: Optional[str], field: str) -> None:
-    if not batch_id:
-        return
-    job = ctx.store.get(JOBS, batch_id) or {}
-    job[field] = int(job.get(field, 0)) + 1
-    job["updated"] = now()
-    ctx.store.update(JOBS, batch_id, job)
 
 
 # ----------------------------------------------------------------------------- enqueue

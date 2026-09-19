@@ -212,9 +212,12 @@ def batch_status(batch_id: str):
                      "attempts": r.get("attempts"), "error": r.get("error"),
                      "category": (r.get("result") or {}).get("decision", {}).get("category"),
                      "decision_status": (r.get("result") or {}).get("decision", {}).get("status")})
-    pending = sum(1 for r in rows if r["status"] not in ("DONE", "FAILED"))
-    return {"batch_id": batch_id, "total": job.get("total"), "done": job.get("done", 0),
-            "failed": job.get("failed", 0), "pending": pending, "duplicates": job.get("duplicates", 0), "items": rows}
+    # counts are derived from the per-email status documents (race-free), never from counters
+    done = sum(1 for r in rows if r["status"] == "DONE")
+    failed = sum(1 for r in rows if r["status"] == "FAILED")
+    pending = len(rows) - done - failed
+    return {"batch_id": batch_id, "total": job.get("total"), "done": done, "failed": failed,
+            "pending": pending, "duplicates": job.get("duplicates", 0), "items": rows}
 
 
 @app.get("/report/{ident}", summary="Result by idempotency key or email_id")
@@ -263,8 +266,6 @@ def retry(key: str, request: Request, body: RetryIn | None = None, x_api_key: Op
     store.update(DEAD_LETTER, key, {"status": "RETRYING", "retried_at": now(), "updated": now(),
                                     "retry_count": int(r.get("retry_count", 0)) + 1})
     store.update(REPORTS, key, {"status": "QUEUED", "error": None, "updated": now()})
-    if batch_id and (job := store.get(JOBS, batch_id)):
-        store.update(JOBS, batch_id, {"failed": max(0, int(job.get("failed", 0)) - 1), "updated": now()})
     ref = taskmod.enqueue(ctx, {"key": key, "batch_id": batch_id, "email": email, "retry": True})
     return {"key": key, "status": "RETRYING", "task": ref, "mode": ctx.mode}
 

@@ -48,7 +48,7 @@ Why a deterministic core: most teams hand the SI and BL to an LLM and ask "what 
 | `pipeline/classify_llm.py` | Gemini fallback via `google-genai`: `LLM_PROVIDER=aistudio` (API key) or `vertex` (service-account ADC) |
 | `pipeline/parse_doc.py`, `parse_office.py` | txt / pdf / docx / xlsx → "Label: Value" → fields |
 | `pipeline/run.py` | End-to-end pipeline → `submission.json` |
-| `api/main.py` | FastAPI service (`/process`, `/batch`, `/report/{id}`, `/health`) |
+| `api/main.py`, `api/tasks.py`, `api/store.py` | FastAPI service; Cloud Tasks batch processing with 3 retries, a Firestore dead-letter queue and manual retry ("handle processing failures visibly and allow retries") |
 
 Design invariants:
 1. `compare.py` and `normalize.py` never import an LLM or network library.
@@ -101,8 +101,11 @@ Other evaluation scripts:
 | `GET /` | — | Test page (works on a phone) |
 | `GET /health` | — | Liveness; `?deep=1` makes one real LLM call |
 | `POST /process` | `X-API-Key` | One email → `decision` + `evidence` (classification basis, parsed attachments, seven `FieldResult`s, readable report) |
-| `POST /batch` | `X-API-Key` | Up to 200 emails |
-| `GET /report/{email_id}` | — | Most recent result (instance memory) |
+| `POST /batch` | `X-API-Key` | Up to 200 emails, one Cloud Tasks task each (3 attempts, exponential backoff); duplicates by email_id + content hash are skipped |
+| `GET /batch/{id}` | — | Per-email status of a batch |
+| `GET /report/{id}` | — | Result by idempotency key or email_id (Firestore) |
+| `GET /failures` | — | Dead-letter queue: emails that failed all 3 attempts, with reason and original input |
+| `POST /failures/{key}/retry` | `X-API-Key` | Retry a dead-lettered email |
 
 Request body: `{"email_id", "from", "subject", "body", "attachments": [{"name", "content_base64"} or {"name", "text"}]}`.
 
