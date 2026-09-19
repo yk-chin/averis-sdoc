@@ -104,12 +104,12 @@ Other evaluation scripts:
 | `POST /batch` | `X-API-Key` | Up to 200 emails, one Cloud Tasks task each (3 attempts, exponential backoff); duplicates by email_id + content hash are skipped |
 | `GET /batch/{id}` | — | Per-email status of a batch |
 | `GET /report/{id}` | — | Result by idempotency key or email_id (Firestore) |
-| `GET /failures` | — | Dead-letter queue: emails that failed all 3 attempts, with reason and original input |
+| `GET /failures` | `X-API-Key` | Dead-letter queue: emails that failed all 3 attempts, with reason and original input |
 | `POST /failures/{key}/retry` | `X-API-Key` | Retry a dead-lettered email |
 
 Request body: `{"email_id", "from", "subject", "body", "attachments": [{"name", "content_base64"} or {"name", "text"}]}`.
 
-Auth is tiered by cost: single-email processing needs no credentials (10 requests / minute / IP); batch processing and dead-letter retries require `X-API-Key`, because one batch can consume the LLM quota.
+Auth is tiered by cost and sensitivity: single-email processing needs no credentials (10 requests / minute / IP); batch processing, the dead-letter queue (original inputs, tracebacks) and retries require `X-API-Key`.
 
 Deployment details, runtime identity, and the redeploy command: `docs/DEPLOY.md`.
 

@@ -13,10 +13,12 @@ GET  /health               liveness; ?deep=1 makes one real LLM call
 GET  /                     test / demo page
 
 Auth, tiered by cost:
-      anonymous  - GET endpoints and POST /process (one email; rate-limited per client IP,
-                   RATE_LIMIT_PER_MIN requests per minute, HTTP 429 above that)
-      X-API-Key  - POST /batch, POST /failures/{key}/retry, POST /admin/chaos (a batch can burn the
-                   whole LLM quota). The key comes from Secret Manager on Cloud Run (API_TOKEN);
+      anonymous  - GET /, GET /health (no project id / model chain / internal counters), GET /report/{id}
+                   (unguessable id, never a traceback), GET /batch/{id}, and POST /process (one email;
+                   rate-limited per client IP, RATE_LIMIT_PER_MIN requests per minute, HTTP 429 above that)
+      X-API-Key  - POST /batch (a batch can burn the whole LLM quota), GET /failures and
+                   GET /failures/{key} (original inputs and tracebacks), POST /failures/{key}/retry,
+                   POST /admin/chaos. The key comes from Secret Manager on Cloud Run (API_TOKEN);
                    without API_TOKEN set, these are open too (local development).
 LLM:  shared with the pipeline (pipeline/classify_llm.py). With LLM_PROVIDER=vertex it uses the
       runtime's Application Default Credentials (the Cloud Run service account) - no API key.
@@ -38,7 +40,7 @@ from pydantic import BaseModel, Field
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from pipeline.run import decide                                                     # noqa: E402
-from pipeline.classify_llm import classify_with_llm, STATS as LLM_STATS, MODEL_USAGE  # noqa: E402
+from pipeline.classify_llm import classify_with_llm                               # noqa: E402
 from pipeline.classify_llm import _load_dotenv                                      # noqa: E402
 _load_dotenv()                                            # local .env; absent in the cloud, env vars are used
 from api.store import make_store, idempotency_key, now, REPORTS, JOBS, DEAD_LETTER, SETTINGS  # noqa: E402
@@ -48,6 +50,7 @@ APP_VERSION = os.getenv("APP_VERSION", "dev")
 API_TOKEN = os.getenv("API_TOKEN", "").strip()
 MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
 RATE_LIMIT_PER_MIN = int(os.getenv("RATE_LIMIT_PER_MIN", "10"))   # anonymous POST /process, per client IP
+KEYED_ENDPOINTS = ["POST /batch", "GET /failures", "GET /failures/{key}", "POST /failures/{key}/retry", "POST /admin/chaos"]
 
 app = FastAPI(title="ShipDoc API", version=APP_VERSION,
               description="Shipping-document intake: classify the email, parse the attached SI and draft BL, "
@@ -163,22 +166,20 @@ def _ctx(request: Request) -> taskmod.TaskContext:
 @app.get("/health", summary="Liveness and configuration; ?deep=1 also exercises the LLM")
 def health(deep: int = 0):
     chaos = store.get(SETTINGS, "chaos") or {}
+    # Public: no project id, model chain or internal LLM counters (F7).
     info: dict[str, Any] = {
         "status": "ok", "version": APP_VERSION, "uptime_s": round(time.time() - _started),
         "llm_provider": os.getenv("LLM_PROVIDER") or "(disabled)",
-        "gemini_model": os.getenv("GEMINI_MODEL", ""), "gcp_project": os.getenv("GCP_PROJECT", ""),
-        "api_key_required_for": ["POST /batch", "POST /failures/{key}/retry", "POST /admin/chaos"] if API_TOKEN else [],
+        "api_key_required_for": KEYED_ENDPOINTS if API_TOKEN else [],
         "anonymous_rate_limit_per_min": RATE_LIMIT_PER_MIN,
         "tasks_mode": os.getenv("TASKS_MODE", "inline"), "store": os.getenv("STORE", "memory"),
         "max_attempts": taskmod.MAX_ATTEMPTS, "chaos_enabled": bool(chaos.get("enabled")),
-        "llm_stats": dict(LLM_STATS), "llm_models_used": dict(MODEL_USAGE),
     }
     if deep:
         t0 = time.time()
         r = classify_with_llm({"email_id": "health", "subject": "Query on invoice 123",
                                "body": "Hi, is the THC included in invoice 123? Please advise.", "attachments": []})
-        info["llm_check"] = {"ok": r is not None, "elapsed_ms": round((time.time() - t0) * 1000),
-                             "result": r.model_dump() if r else None}
+        info["llm_check"] = {"ok": r is not None, "elapsed_ms": round((time.time() - t0) * 1000)}
         if r is None:
             info["status"] = "degraded"
     return info
@@ -253,11 +254,13 @@ def report(ident: str):
         r = hits[0] if hits else None
     if r is None:
         raise HTTPException(404, f"no report for {ident}")
+    r.pop("traceback", None)                         # never part of a public response
     return r
 
 
-@app.get("/failures", summary="The dead-letter queue")
-def failures(all: int = 0, limit: int = 100):
+@app.get("/failures", summary="The dead-letter queue (X-API-Key required)")
+def failures(all: int = 0, limit: int = 100, x_api_key: Optional[str] = Header(default=None)):
+    _check_key(x_api_key)
     where = None if all else ("status", "==", "FAILED")
     rows = store.list(DEAD_LETTER, where=where, limit=limit)
     for r in rows:                                    # keep the listing light; input is available per item
@@ -269,8 +272,9 @@ def failures(all: int = 0, limit: int = 100):
     return {"count": len(rows), "items": rows}
 
 
-@app.get("/failures/{key}", summary="One dead-letter item with its original input and traceback")
-def failure(key: str):
+@app.get("/failures/{key}", summary="One dead-letter item with its original input and traceback (X-API-Key required)")
+def failure(key: str, x_api_key: Optional[str] = Header(default=None)):
+    _check_key(x_api_key)
     r = store.get(DEAD_LETTER, key)
     if r is None:
         raise HTTPException(404, f"no dead-letter item {key}")

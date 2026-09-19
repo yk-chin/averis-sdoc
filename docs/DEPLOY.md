@@ -19,12 +19,12 @@ Service: `https://shipdoc-api-705106212012.asia-southeast1.run.app`　Project: `
 | | Auth | Description |
 |---|---|---|
 | `GET /` | - | Test page, works on a phone |
-| `GET /health` | - | `?deep=1` makes one real LLM call to verify Vertex authentication |
+| `GET /health` | - | Liveness and auth summary; no project id, model chain or internal counters. `?deep=1` makes one real LLM call |
 | `POST /process` | - (rate-limited: `RATE_LIMIT_PER_MIN`, default 10, per client IP) | One email -> `decision` (the submission record) + `evidence` (rule/LLM classification basis, parsed attachments, the seven `FieldResult`s, readable report) |
 | `POST /batch` | X-API-Key | `{"emails":[...]}`, <= 200. One Cloud Tasks task per email; returns `batch_id` immediately. Same email (email_id + content hash) already queued/done -> `duplicate`, not re-processed |
 | `GET /batch/{batch_id}` | - | Per-email status (QUEUED / PROCESSING / RETRYING / DONE / FAILED), attempts, errors |
-| `GET /failures` | - | Dead-letter queue: emails that failed all 3 attempts, with reason and attempts (`?all=1` includes RECOVERED) |
-| `GET /failures/{key}` | - | One dead-letter item with the original input and traceback |
+| `GET /failures` | X-API-Key | Dead-letter queue: emails that failed all 3 attempts, with reason and attempts (`?all=1` includes RECOVERED) |
+| `GET /failures/{key}` | X-API-Key | One dead-letter item with the original input and traceback |
 | `POST /failures/{key}/retry` | X-API-Key | Re-enqueue from the stored input (`clear_fault` strips demo fault injection). Success marks the item RECOVERED |
 | `POST /admin/chaos?enabled=true\|false` | X-API-Key | Demo switch: every task attempt fails while enabled |
 | `POST /tasks/process` | OIDC (Cloud Tasks) or X-API-Key | One attempt of one email; 503 asks Cloud Tasks to retry, 200 on success or after dead-lettering |

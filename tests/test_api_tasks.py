@@ -162,7 +162,13 @@ def test_process_is_anonymous_and_batch_is_keyed(monkeypatch):
     assert client.post("/batch", json={"emails": [_email("b-1")]}).status_code == 401
     assert client.post("/batch", json={"emails": [_email("b-1")]}, headers={"X-API-Key": "secret"}).status_code == 200
     assert client.post("/admin/chaos?enabled=false").status_code == 401
-    assert client.get("/health").json()["api_key_required_for"] == ["POST /batch", "POST /failures/{key}/retry", "POST /admin/chaos"]
+    assert client.get("/health").json()["api_key_required_for"] == m.KEYED_ENDPOINTS
+    # F7: dead-letter endpoints are keyed; /health leaks no internals
+    assert client.get("/failures").status_code == 401
+    assert client.get("/failures/xyz").status_code == 401
+    assert client.get("/failures", headers={"X-API-Key": "secret"}).status_code == 200
+    h = client.get("/health").json()
+    assert not any(k in h for k in ("gcp_project", "gemini_model", "llm_stats", "llm_models_used"))
 
 
 def test_process_rate_limit_per_ip(monkeypatch):

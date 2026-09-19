@@ -21,8 +21,8 @@
 <h1>ShipDoc API <small id="ver"></small></h1>
 <small>Shipping-document intake: classify the email → parse the attached SI and draft BL → compare the seven key fields → escalate what a person must see.<br>
 <a href="/docs">OpenAPI docs</a> · <code>GET /health</code> · <code>POST /process</code> · <code>POST /batch</code> · <code>GET /failures</code></small>
-<p style="margin:10px 0 0;font-size:13px;color:#52514e"><b>No credentials needed</b> to process a single email (section 1) - just click. Only <b>batch processing</b> (section 2) and dead-letter retries need an API key, because one batch can consume the LLM quota.</p>
-<label>X-API-Key (batch and retry only; leave empty for single-email processing)</label><input id="key" placeholder="not needed for section 1">
+<p style="margin:10px 0 0;font-size:13px;color:#52514e"><b>No credentials needed</b> to process a single email (section 1) - just click. Only <b>batch processing</b> (section 2) and the <b>dead-letter queue</b> (section 3) need an API key, because one batch can consume the LLM quota.</p>
+<label>X-API-Key (batch, dead-letter queue and retry only; leave empty for single-email processing)</label><input id="key" placeholder="not needed for section 1">
 
 <h2>1 · Process one email (synchronous, no key needed)</h2>
 <div class="row"><div><label>email_id</label><input id="eid" value="demo-001"></div><div><label>from</label><input id="from" value="ops@example.com"></div></div>
@@ -117,7 +117,7 @@ $('chaosOff').onclick=async()=>{await fetch('/admin/chaos?enabled=false',{method
 
 // ---- 3. dead letters
 async function refreshFailures(){
-  const f=await (await fetch('/failures'+($('fall').checked?'?all=1':''))).json();
+  const r0=await fetch('/failures'+($('fall').checked?'?all=1':''),{headers:hdr()});if(r0.status===401){$('ftab').querySelector('tbody').innerHTML='<tr><td colspan="5"><small>Dead-letter queue needs the API key (enter it above).</small></td></tr>';return}const f=await r0.json();
   const tb=$('ftab').querySelector('tbody');tb.innerHTML='';
   if(!f.items.length){tb.innerHTML='<tr><td colspan="5"><small>Dead-letter queue is empty.</small></td></tr>';return}
   for(const it of f.items){tb.insertAdjacentHTML('beforeend',`<tr><td>${it.email_id}<br><small>${it.id}</small></td><td><span class="pill ${cls(it.status)}">${it.status}</span></td><td>${it.attempts}</td><td><small>${it.reason||''}</small></td><td>${it.status==='FAILED'?`<button class="sm" onclick="retryOne('${it.id}')">Retry</button>`:''} <button class="sm gray" onclick="showOne('${it.id}')">Details</button></td></tr>`)}
@@ -126,7 +126,7 @@ window.retryOne=async key=>{const r=await fetch('/failures/'+key+'/retry',{metho
   $('fout').style.display='';$('fout').textContent=JSON.stringify(j,null,2);
   let n=0;const t=setInterval(async()=>{const rep=await (await fetch('/report/'+key)).json();
     if(rep.status==='DONE'||rep.status==='FAILED'||++n>20){clearInterval(t);$('fout').textContent='Retry result:\n'+JSON.stringify({status:rep.status,attempts:rep.attempts,error:rep.error,decision:rep.result?rep.result.decision:null},null,2);refreshFailures();if(batchId)refreshBatch()}},1500)};
-window.showOne=async key=>{const j=await (await fetch('/failures/'+key)).json();$('fout').style.display='';$('fout').textContent=JSON.stringify(j,null,2)};
+window.showOne=async key=>{const j=await (await fetch('/failures/'+key,{headers:hdr()})).json();$('fout').style.display='';$('fout').textContent=JSON.stringify(j,null,2)};
 $('frefresh').onclick=refreshFailures;$('fall').onchange=refreshFailures;
 refreshFailures();
 </script></body></html>
