@@ -1,16 +1,27 @@
 """
 ShipDoc API - the pipeline as a service
 =======================================
-POST /process        one email (attachments inline) -> decision + per-field evidence + readable report
-POST /batch          up to 200 emails
-GET  /report/{id}    most recent result for an email_id (instance memory; gone when the instance is recycled)
-GET  /health         liveness; ?deep=1 makes one real LLM call to verify Vertex IAM auth in the cloud
-GET  /               minimal test page (works on a phone)
+POST /process              one email (attachments inline) -> decision + per-field evidence, synchronous
+POST /batch                one Cloud Tasks task per email; returns batch_id immediately
+GET  /batch/{batch_id}     progress and per-email status of a batch
+GET  /report/{id}          result by email_id or idempotency key (persisted in Firestore)
+GET  /failures             the dead-letter queue (status FAILED)
+POST /failures/{key}/retry re-enqueue a dead-lettered email from its stored input
+POST /tasks/process        Cloud Tasks callback (OIDC-verified); one attempt of one email
+POST /admin/chaos          demo switch: simulate a downstream outage for every task
+GET  /health               liveness; ?deep=1 makes one real LLM call
+GET  /                     test / demo page
 
 Auth: when API_TOKEN is set (from Secret Manager on Cloud Run) the POST endpoints require a
       matching X-API-Key header; GET endpoints are public. Without API_TOKEN everything is open.
 LLM:  shared with the pipeline (pipeline/classify_llm.py). With LLM_PROVIDER=vertex it uses the
       runtime's Application Default Credentials (the Cloud Run service account) - no API key.
+
+Failure handling ("handle processing failures visibly and allow retries"):
+  each task gets MAX_ATTEMPTS (3) tries with exponential backoff; the third failure is written to the
+  dead_letter collection with the reason and the original input, listed by GET /failures, and can be
+  retried by POST /failures/{key}/retry. Idempotency key = email_id + content hash: re-submitting the
+  same email never produces a second report.
 """
 from __future__ import annotations
 import base64, os, pathlib, sys, tempfile, time, uuid
@@ -22,10 +33,12 @@ from pydantic import BaseModel, Field
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from pipeline.run import decide                         # noqa: E402
-from pipeline.classify_llm import classify_with_llm, STATS as LLM_STATS, MODEL_USAGE   # noqa: E402
-from pipeline.classify_llm import _load_dotenv                                     # noqa: E402
+from pipeline.run import decide                                                     # noqa: E402
+from pipeline.classify_llm import classify_with_llm, STATS as LLM_STATS, MODEL_USAGE  # noqa: E402
+from pipeline.classify_llm import _load_dotenv                                      # noqa: E402
 _load_dotenv()                                            # local .env; absent in the cloud, env vars are used
+from api.store import make_store, idempotency_key, now, REPORTS, JOBS, DEAD_LETTER, SETTINGS  # noqa: E402
+from api import tasks as taskmod                                                    # noqa: E402
 
 APP_VERSION = os.getenv("APP_VERSION", "dev")
 API_TOKEN = os.getenv("API_TOKEN", "").strip()
@@ -33,9 +46,10 @@ MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
 
 app = FastAPI(title="ShipDoc API", version=APP_VERSION,
               description="Shipping-document intake: classify the email, parse the attached SI and draft BL, "
-                          "compare the seven key fields deterministically, and escalate what a person must see.")
+                          "compare the seven key fields deterministically, and escalate what a person must see. "
+                          "Batches run through Cloud Tasks with 3 retries and a visible dead-letter queue.")
 
-_reports: dict[str, dict] = {}                         # email_id -> most recent result (instance memory)
+store = make_store()
 _started = time.time()
 
 
@@ -52,6 +66,7 @@ class EmailIn(BaseModel):
     body: str = ""
     sender: Optional[str] = Field(None, alias="from")
     attachments: list[Attachment] = []
+    fail_times: int = Field(0, ge=0, description="Demo only: make the first N processing attempts fail")
 
     model_config = {"populate_by_name": True}
 
@@ -60,59 +75,75 @@ class BatchIn(BaseModel):
     emails: list[EmailIn]
 
 
+class RetryIn(BaseModel):
+    clear_fault: bool = Field(True, description="Strip demo fault injection (fail_times) before retrying")
+
+
 # ----------------------------------------------------------------------------- helpers
 def _check_key(x_api_key: Optional[str]) -> None:
     if API_TOKEN and x_api_key != API_TOKEN:
         raise HTTPException(status_code=401, detail="missing or invalid X-API-Key")
 
 
-def _materialise(email: EmailIn, workdir: pathlib.Path) -> dict:
+def _email_dict(email: EmailIn) -> dict:
+    d = email.model_dump(by_alias=True, exclude_none=True)
+    d["email_id"] = email.email_id or f"api-{uuid.uuid4().hex[:8]}"
+    return d
+
+
+def _materialise(email: dict, workdir: pathlib.Path) -> dict:
     """Write inline attachments to a temp dir; return the email dict the pipeline expects."""
     att_dir = workdir / "attachments"; att_dir.mkdir(parents=True, exist_ok=True)
     rels = []
-    for a in email.attachments:
-        name = pathlib.Path(a.name).name                       # strip any path component
+    for a in email.get("attachments") or []:
+        name = pathlib.Path(a.get("name", "")).name                   # strip any path component
         if not name:
-            raise HTTPException(422, "attachment name is empty")
-        if a.content_base64 is not None:
+            raise ValueError("attachment name is empty")
+        if a.get("content_base64") is not None:
             try:
-                data = base64.b64decode(a.content_base64, validate=True)
+                data = base64.b64decode(a["content_base64"], validate=True)
             except Exception:
-                raise HTTPException(422, f"attachment {name}: invalid base64")
-        elif a.text is not None:
-            data = a.text.encode("utf-8")
+                raise ValueError(f"attachment {name}: invalid base64")
+        elif a.get("text") is not None:
+            data = a["text"].encode("utf-8")
         else:
-            raise HTTPException(422, f"attachment {name}: provide content_base64 or text")
+            raise ValueError(f"attachment {name}: provide content_base64 or text")
         if len(data) > MAX_ATTACHMENT_BYTES:
-            raise HTTPException(413, f"attachment {name} exceeds {MAX_ATTACHMENT_BYTES} bytes")
+            raise ValueError(f"attachment {name} exceeds {MAX_ATTACHMENT_BYTES} bytes")
         (att_dir / name).write_bytes(data)
         rels.append(f"attachments/{name}")
-    return {"email_id": email.email_id or f"api-{uuid.uuid4().hex[:8]}",
-            "from": email.sender or "", "subject": email.subject, "body": email.body,
-            "attachments": rels}
+    return {"email_id": email["email_id"], "from": email.get("from") or "",
+            "subject": email.get("subject", ""), "body": email.get("body", ""), "attachments": rels}
 
 
-def _process_one(email: EmailIn) -> dict:
+def _process_email(email: dict) -> dict:
+    """Run the pipeline on one email dict. Raises on any failure (that is what the task layer relies on)."""
     t0 = time.time()
     with tempfile.TemporaryDirectory(prefix="shipdoc-") as tmp:
         root = pathlib.Path(tmp)
         e = _materialise(email, root)
         details: dict = {}
         decision = decide(e, root, details=details)
-    result = {"email_id": e["email_id"], "decision": decision, "evidence": details,
-              "elapsed_ms": round((time.time() - t0) * 1000), "version": APP_VERSION}
-    _reports[e["email_id"]] = result
-    return result
+    return {"email_id": e["email_id"], "decision": decision, "evidence": details,
+            "elapsed_ms": round((time.time() - t0) * 1000), "version": APP_VERSION}
+
+
+def _ctx(request: Request) -> taskmod.TaskContext:
+    base = os.getenv("SERVICE_URL") or str(request.base_url)
+    return taskmod.TaskContext(store, _process_email, service_url=base)
 
 
 # ----------------------------------------------------------------------------- endpoints
 @app.get("/health", summary="Liveness and configuration; ?deep=1 also exercises the LLM")
 def health(deep: int = 0):
+    chaos = store.get(SETTINGS, "chaos") or {}
     info: dict[str, Any] = {
         "status": "ok", "version": APP_VERSION, "uptime_s": round(time.time() - _started),
         "llm_provider": os.getenv("LLM_PROVIDER") or "(disabled)",
         "gemini_model": os.getenv("GEMINI_MODEL", ""), "gcp_project": os.getenv("GCP_PROJECT", ""),
-        "api_key_required": bool(API_TOKEN), "reports_in_memory": len(_reports),
+        "api_key_required": bool(API_TOKEN),
+        "tasks_mode": os.getenv("TASKS_MODE", "inline"), "store": os.getenv("STORE", "memory"),
+        "max_attempts": taskmod.MAX_ATTEMPTS, "chaos_enabled": bool(chaos.get("enabled")),
         "llm_stats": dict(LLM_STATS), "llm_models_used": dict(MODEL_USAGE),
     }
     if deep:
@@ -126,33 +157,142 @@ def health(deep: int = 0):
     return info
 
 
-@app.post("/process", summary="Process one email: decision + per-field evidence")
+@app.post("/process", summary="Process one email synchronously: decision + per-field evidence")
 def process(email: EmailIn, x_api_key: Optional[str] = Header(default=None)):
     _check_key(x_api_key)
-    return _process_one(email)
+    e = _email_dict(email)
+    try:
+        result = _process_email(e)
+    except ValueError as ex:
+        raise HTTPException(422, str(ex))
+    key = idempotency_key(e)
+    store.set(REPORTS, key, {"status": "DONE", "email_id": e["email_id"], "key": key, "result": result,
+                             "attempts": 1, "error": None, "updated": now()})
+    return dict(result, key=key)
 
 
-@app.post("/batch", summary="Process up to 200 emails")
-def batch(payload: BatchIn, x_api_key: Optional[str] = Header(default=None)):
+@app.post("/batch", summary="Enqueue one Cloud Tasks task per email; returns immediately")
+def batch(payload: BatchIn, request: Request, x_api_key: Optional[str] = Header(default=None)):
     _check_key(x_api_key)
     if len(payload.emails) > 200:
         raise HTTPException(413, "max 200 emails per batch")
-    results = [_process_one(e) for e in payload.emails]
-    summary: dict[str, int] = {}
-    for r in results:
-        d = r["decision"]
-        summary[d["category"]] = summary.get(d["category"], 0) + 1
-        if d["category"] == "BL_COMPARISON":
-            summary["status:" + d["status"]] = summary.get("status:" + d["status"], 0) + 1
-    return {"count": len(results), "summary": summary, "results": results}
+    ctx = _ctx(request)
+    batch_id = f"batch-{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
+    items = []
+    for em in payload.emails:
+        e = _email_dict(em)
+        key = idempotency_key(e)
+        existing = store.get(REPORTS, key)
+        if existing and existing.get("status") in ("QUEUED", "PROCESSING", "RETRYING", "DONE"):
+            items.append({"email_id": e["email_id"], "key": key, "status": "duplicate",
+                          "existing_status": existing["status"]})
+            continue
+        store.set(REPORTS, key, {"status": "QUEUED", "email_id": e["email_id"], "key": key, "batch_id": batch_id,
+                                 "attempts": 0, "error": None, "result": None, "updated": now()})
+        ref = taskmod.enqueue(ctx, {"key": key, "batch_id": batch_id, "email": e})
+        items.append({"email_id": e["email_id"], "key": key, "status": "queued", "task": ref})
+    queued = sum(1 for i in items if i["status"] == "queued")
+    store.set(JOBS, batch_id, {"batch_id": batch_id, "total": queued, "done": 0, "failed": 0,
+                               "duplicates": len(items) - queued,
+                               "keys": [i["key"] for i in items if i["status"] == "queued"],
+                               "created": now(), "updated": now()})
+    return {"batch_id": batch_id, "queued": queued, "duplicates": len(items) - queued, "items": items,
+            "mode": ctx.mode}
 
 
-@app.get("/report/{email_id}", summary="Return the most recent result for an email_id (instance memory)")
-def report(email_id: str):
-    r = _reports.get(email_id)
+@app.get("/batch/{batch_id}", summary="Progress of a batch and the status of each email")
+def batch_status(batch_id: str):
+    job = store.get(JOBS, batch_id)
+    if not job:
+        raise HTTPException(404, f"no batch {batch_id}")
+    rows = []
+    for key in job.get("keys", []):
+        r = store.get(REPORTS, key) or {}
+        rows.append({"key": key, "email_id": r.get("email_id"), "status": r.get("status"),
+                     "attempts": r.get("attempts"), "error": r.get("error"),
+                     "category": (r.get("result") or {}).get("decision", {}).get("category"),
+                     "decision_status": (r.get("result") or {}).get("decision", {}).get("status")})
+    pending = sum(1 for r in rows if r["status"] not in ("DONE", "FAILED"))
+    return {"batch_id": batch_id, "total": job.get("total"), "done": job.get("done", 0),
+            "failed": job.get("failed", 0), "pending": pending, "duplicates": job.get("duplicates", 0), "items": rows}
+
+
+@app.get("/report/{ident}", summary="Result by idempotency key or email_id")
+def report(ident: str):
+    r = store.get(REPORTS, ident)
+    if r is None:                                     # fall back to the most recent report for that email_id
+        hits = store.list(REPORTS, where=("email_id", "==", ident), limit=1)
+        r = hits[0] if hits else None
     if r is None:
-        raise HTTPException(404, f"no report for {email_id} (results live in instance memory; re-run /process)")
+        raise HTTPException(404, f"no report for {ident}")
     return r
+
+
+@app.get("/failures", summary="The dead-letter queue")
+def failures(all: int = 0, limit: int = 100):
+    where = None if all else ("status", "==", "FAILED")
+    rows = store.list(DEAD_LETTER, where=where, limit=limit)
+    for r in rows:                                    # keep the listing light; input is available per item
+        inp = r.get("input") or {}
+        r["input_summary"] = {"email_id": inp.get("email_id"), "subject": inp.get("subject"),
+                              "attachments": [a.get("name") for a in inp.get("attachments") or []],
+                              "fail_times": inp.get("fail_times", 0)}
+        r.pop("input", None); r.pop("traceback", None)
+    return {"count": len(rows), "items": rows}
+
+
+@app.get("/failures/{key}", summary="One dead-letter item with its original input and traceback")
+def failure(key: str):
+    r = store.get(DEAD_LETTER, key)
+    if r is None:
+        raise HTTPException(404, f"no dead-letter item {key}")
+    return dict(r, key=key)
+
+
+@app.post("/failures/{key}/retry", summary="Retry a dead-lettered email from its stored input")
+def retry(key: str, request: Request, body: RetryIn | None = None, x_api_key: Optional[str] = Header(default=None)):
+    _check_key(x_api_key)
+    r = store.get(DEAD_LETTER, key)
+    if r is None:
+        raise HTTPException(404, f"no dead-letter item {key}")
+    email = dict(r.get("input") or {})
+    if (body is None or body.clear_fault) and "fail_times" in email:
+        email.pop("fail_times")                       # the operator fixed the cause; retry without the injected fault
+    ctx = _ctx(request)
+    batch_id = r.get("batch_id")
+    store.update(DEAD_LETTER, key, {"status": "RETRYING", "retried_at": now(), "updated": now(),
+                                    "retry_count": int(r.get("retry_count", 0)) + 1})
+    store.update(REPORTS, key, {"status": "QUEUED", "error": None, "updated": now()})
+    if batch_id and (job := store.get(JOBS, batch_id)):
+        store.update(JOBS, batch_id, {"failed": max(0, int(job.get("failed", 0)) - 1), "updated": now()})
+    ref = taskmod.enqueue(ctx, {"key": key, "batch_id": batch_id, "email": email, "retry": True})
+    return {"key": key, "status": "RETRYING", "task": ref, "mode": ctx.mode}
+
+
+@app.post("/tasks/process", summary="Cloud Tasks callback: one attempt of one email", include_in_schema=True)
+async def tasks_process(request: Request, authorization: Optional[str] = Header(default=None),
+                        x_api_key: Optional[str] = Header(default=None),
+                        x_cloudtasks_taskretrycount: Optional[str] = Header(default=None)):
+    ctx = _ctx(request)
+    try:
+        taskmod.verify_task_request(ctx, authorization, api_key_ok=bool(API_TOKEN) and x_api_key == API_TOKEN)
+    except Exception as ex:                          # noqa: BLE001
+        raise HTTPException(401, f"task auth failed: {ex}")
+    payload = await request.json()
+    attempt = int(x_cloudtasks_taskretrycount or 0) + 1
+    done, error = taskmod.handle(ctx, payload, attempt)
+    if done:
+        return {"key": payload.get("key"), "attempt": attempt, "status": "failed" if error else "done", "error": error}
+    # not done -> 5xx so Cloud Tasks retries with the queue's exponential backoff
+    return JSONResponse(status_code=503, content={"key": payload.get("key"), "attempt": attempt,
+                                                  "status": "retry", "error": error})
+
+
+@app.post("/admin/chaos", summary="Demo switch: make every task attempt fail (simulated outage)")
+def chaos(enabled: bool, x_api_key: Optional[str] = Header(default=None)):
+    _check_key(x_api_key)
+    store.set(SETTINGS, "chaos", {"enabled": enabled, "updated": now()})
+    return {"chaos_enabled": enabled}
 
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)

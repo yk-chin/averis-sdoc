@@ -2,23 +2,28 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ShipDoc API</title>
 <style>
- body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;margin:0;padding:16px;background:#f9f9f7;color:#0b0b0b;max-width:720px;margin:auto}
- h1{font-size:20px;margin:8px 0 4px}small{color:#52514e}
+ body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;margin:0;padding:16px;background:#f9f9f7;color:#0b0b0b;max-width:760px;margin:auto}
+ h1{font-size:20px;margin:8px 0 4px}h2{font-size:16px;margin:26px 0 6px;border-top:1px solid #e1e0d9;padding-top:16px}small{color:#52514e}
  label{display:block;margin-top:12px;font-size:13px;color:#52514e}
  input,textarea{width:100%;box-sizing:border-box;padding:8px;border:1px solid #c3c2b7;border-radius:6px;font-size:14px;background:#fff}
- textarea{min-height:110px;font-family:inherit}
- button{margin-top:14px;padding:10px 16px;border:0;border-radius:6px;background:#2a78d6;color:#fff;font-size:15px}
+ textarea{min-height:100px;font-family:inherit}
+ button{margin-top:10px;margin-right:6px;padding:9px 14px;border:0;border-radius:6px;background:#2a78d6;color:#fff;font-size:14px;cursor:pointer}
+ button.gray{background:#52514e}button.red{background:#d03b3b}button.sm{padding:5px 10px;font-size:12px;margin:0}
  button:disabled{opacity:.5}
- pre{background:#fff;border:1px solid #e1e0d9;border-radius:6px;padding:10px;font-size:12px;overflow:auto;white-space:pre-wrap}
+ pre{background:#fff;border:1px solid #e1e0d9;border-radius:6px;padding:10px;font-size:12px;overflow:auto;white-space:pre-wrap;max-height:360px}
  .row{display:flex;gap:8px}.row>*{flex:1}
  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;background:#e1e0d9;margin-right:6px;margin-top:4px}
- .ok{background:#d6f2d6}.warn{background:#fde3c8}.bad{background:#f8d0d0}
+ .ok{background:#d6f2d6}.warn{background:#fde3c8}.bad{background:#f8d0d0}.blue{background:#cde2fb}
+ table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px;background:#fff}
+ th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #e1e0d9;vertical-align:top}th{color:#52514e;font-weight:600}
  a{color:#2a78d6}
 </style></head><body>
 <h1>ShipDoc API <small id="ver"></small></h1>
 <small>Shipping-document intake: classify the email → parse the attached SI and draft BL → compare the seven key fields → escalate what a person must see.<br>
-Endpoints: <code>GET /health</code> · <code>POST /process</code> · <code>POST /batch</code> · <code>GET /report/{id}</code> · <a href="/docs">OpenAPI docs</a></small>
+<a href="/docs">OpenAPI docs</a> · <code>GET /health</code> · <code>POST /process</code> · <code>POST /batch</code> · <code>GET /failures</code></small>
 <label>X-API-Key (required for POST endpoints when the service is protected)</label><input id="key" placeholder="leave empty to send without a key">
+
+<h2>1 · Process one email (synchronous)</h2>
 <div class="row"><div><label>email_id</label><input id="eid" value="demo-001"></div><div><label>from</label><input id="from" value="ops@example.com"></div></div>
 <label>subject</label><input id="subj" value="TO CONFIRM DOCS _ 5RSG-00133 _ CALLAO_PERU">
 <label>body</label><textarea id="body">Hi,
@@ -27,22 +32,41 @@ Attached are the SI and draft BL for OC 5RSG-00133. Please check the details and
 
 Best Regards</textarea>
 <label>attachments (SI / BL as .txt, .pdf, .docx or .xlsx — names with _SI / _BL are routed by name, otherwise by content)</label><input id="files" type="file" multiple>
-<button id="go">Process email</button> <button id="hb" style="background:#52514e">Health check (deep)</button>
-<div id="sum" style="margin-top:12px"></div>
+<button id="go">Process email</button> <button id="hb" class="gray">Health check (deep)</button>
+<div id="sum"></div>
 <pre id="out">Results will appear here.</pre>
+
+<h2>2 · Batch with visible failures and retries (Cloud Tasks)</h2>
+<small>Each email becomes a task with up to <b>3 attempts</b> (exponential backoff). A third failure lands in the <b>dead-letter queue</b> with its reason and original input, from where it can be retried.
+The demo batch below sends one healthy email, one that fails twice then succeeds (<code>fail_times=2</code>), and one that fails every time (<code>fail_times=99</code>).</small>
+<div>
+<button id="bsend">Send demo batch</button>
+<button id="bdup" class="gray">Send the same batch again (idempotency)</button>
+<button id="chaosOn" class="red">Chaos ON (simulate outage)</button>
+<button id="chaosOff" class="gray">Chaos OFF</button>
+</div>
+<div id="bsum"></div>
+<table id="btab" style="display:none"><thead><tr><th>email_id</th><th>status</th><th>attempts</th><th>category / result</th><th>error</th></tr></thead><tbody></tbody></table>
+
+<h2>3 · Dead-letter queue</h2>
+<button id="frefresh" class="gray">Refresh</button> <label style="display:inline"><input type="checkbox" id="fall" style="width:auto"> show recovered too</label>
+<table id="ftab"><thead><tr><th>email_id</th><th>status</th><th>attempts</th><th>reason</th><th></th></tr></thead><tbody><tr><td colspan="5"><small>No failures loaded yet.</small></td></tr></tbody></table>
+<pre id="fout" style="display:none"></pre>
+
 <script>
 const $=id=>document.getElementById(id);
-fetch('/health').then(r=>r.json()).then(h=>$('ver').textContent='v'+h.version+' · LLM: '+h.llm_provider).catch(()=>{});
+const hdr=()=>{const h={'Content-Type':'application/json'};if($('key').value)h['X-API-Key']=$('key').value;return h};
+const cls=s=>s==='OK'||s==='DONE'?'ok':s==='MISMATCH'||s==='FAILED'?'bad':s==='QUEUED'||s==='PROCESSING'||s==='RETRYING'?'blue':'warn';
+fetch('/health').then(r=>r.json()).then(h=>{$('ver').textContent='v'+h.version+' · LLM: '+h.llm_provider+' · tasks: '+h.tasks_mode+' · store: '+h.store+(h.chaos_enabled?' · CHAOS ON':'')}).catch(()=>{});
 const b64=f=>new Promise((ok,err)=>{const r=new FileReader();r.onload=()=>ok(r.result.split(',')[1]);r.onerror=err;r.readAsDataURL(f)});
-const cls=s=>s==='OK'?'ok':s==='MISMATCH'?'bad':'warn';
+
+// ---- 1. single email
 $('go').onclick=async()=>{
   $('go').disabled=true;$('out').textContent='Processing…';$('sum').innerHTML='';
   try{
     const atts=[];for(const f of $('files').files){atts.push({name:f.name,content_base64:await b64(f)})}
     const payload={email_id:$('eid').value,from:$('from').value,subject:$('subj').value,body:$('body').value,attachments:atts};
-    const h={'Content-Type':'application/json'};if($('key').value)h['X-API-Key']=$('key').value;
-    const r=await fetch('/process',{method:'POST',headers:h,body:JSON.stringify(payload)});
-    const j=await r.json();
+    const r=await fetch('/process',{method:'POST',headers:hdr(),body:JSON.stringify(payload)});const j=await r.json();
     if(r.ok){const d=j.decision;
       $('sum').innerHTML=`<span class="pill">${d.category}</span><span class="pill ${cls(d.status)}">${d.status}</span>`
         +(d.review_reason?`<span class="pill warn">reason: ${d.review_reason}</span>`:'')
@@ -53,4 +77,49 @@ $('go').onclick=async()=>{
   }catch(e){$('out').textContent='ERROR '+e}
   $('go').disabled=false;};
 $('hb').onclick=async()=>{$('out').textContent='Checking…';const r=await fetch('/health?deep=1');$('out').textContent=JSON.stringify(await r.json(),null,2)};
+
+// ---- 2. demo batch
+const SI="SHIPPING INSTRUCTION\nShipper: ABC CO., LTD.\nConsignee: XYZ LLC\nNotify Party: XYZ LLC\nPort of Loading: SINGAPORE (SGSIN)\nPort of Discharge: PORT KLANG, MALAYSIA (MYPKG)\nContainer Count: 3\nGross Weight: 22,000 KG\n";
+const BL="BILL OF LADING (DRAFT)\nShipper: ABC Co Ltd\nConsignee: XYZ LLC\nNotify: XYZ LLC\nLoad Port: SINGAPORE\nPOD: PORT KLANG\nTotal Containers: 4\nGross Wt (kgs): 22 MT\n";
+const body="Hi,\n\nAttached are the SI and draft BL for OC 5RSG-00133. Please check the details and confirm.\n\nBest Regards";
+const mk=(id,extra={})=>({email_id:id,from:'ops@example.com',subject:'TO CONFIRM DOCS _ '+id,body,attachments:[{name:id+'_SI.txt',text:SI},{name:id+'_BL.txt',text:BL}],...extra});
+let batchId=null,poll=null;
+async function sendBatch(){
+  const stamp=new Date().toISOString().slice(11,19).replace(/:/g,'');
+  const emails=[mk('healthy-'+stamp),mk('flaky-'+stamp,{fail_times:2}),mk('broken-'+stamp,{fail_times:99})];
+  $('bsum').innerHTML='Submitting…';
+  const r=await fetch('/batch',{method:'POST',headers:hdr(),body:JSON.stringify({emails})});const j=await r.json();
+  if(!r.ok){$('bsum').textContent='HTTP '+r.status+' '+JSON.stringify(j);return}
+  batchId=j.batch_id;window._lastBatch=emails;
+  $('bsum').innerHTML=`<span class="pill">${j.batch_id}</span><span class="pill blue">queued ${j.queued}</span><span class="pill">duplicates ${j.duplicates}</span><span class="pill">mode ${j.mode}</span>`;
+  startPoll();
+}
+$('bsend').onclick=sendBatch;
+$('bdup').onclick=async()=>{ if(!window._lastBatch){await sendBatch();return}
+  const r=await fetch('/batch',{method:'POST',headers:hdr(),body:JSON.stringify({emails:window._lastBatch})});const j=await r.json();
+  $('bsum').innerHTML+=`<br><span class="pill">${j.batch_id}</span><span class="pill blue">queued ${j.queued}</span><span class="pill warn">duplicates ${j.duplicates} — nothing re-processed</span>`;};
+function startPoll(){clearInterval(poll);poll=setInterval(refreshBatch,1500);refreshBatch()}
+async function refreshBatch(){
+  if(!batchId)return;const s=await (await fetch('/batch/'+batchId)).json();
+  const tb=$('btab').querySelector('tbody');tb.innerHTML='';$('btab').style.display='';
+  for(const it of s.items){tb.insertAdjacentHTML('beforeend',`<tr><td>${it.email_id}</td><td><span class="pill ${cls(it.status)}">${it.status}</span></td><td>${it.attempts??''}</td><td>${it.category?it.category+' / '+it.decision_status:''}</td><td><small>${it.error||''}</small></td></tr>`)}
+  if(s.pending===0){clearInterval(poll);refreshFailures()}
+}
+$('chaosOn').onclick=async()=>{await fetch('/admin/chaos?enabled=true',{method:'POST',headers:hdr()});$('ver').textContent+=' · CHAOS ON'};
+$('chaosOff').onclick=async()=>{await fetch('/admin/chaos?enabled=false',{method:'POST',headers:hdr()});$('ver').textContent=$('ver').textContent.replace(/ · CHAOS ON/g,'')};
+
+// ---- 3. dead letters
+async function refreshFailures(){
+  const f=await (await fetch('/failures'+($('fall').checked?'?all=1':''))).json();
+  const tb=$('ftab').querySelector('tbody');tb.innerHTML='';
+  if(!f.items.length){tb.innerHTML='<tr><td colspan="5"><small>Dead-letter queue is empty.</small></td></tr>';return}
+  for(const it of f.items){tb.insertAdjacentHTML('beforeend',`<tr><td>${it.email_id}<br><small>${it.id}</small></td><td><span class="pill ${cls(it.status)}">${it.status}</span></td><td>${it.attempts}</td><td><small>${it.reason||''}</small></td><td>${it.status==='FAILED'?`<button class="sm" onclick="retryOne('${it.id}')">Retry</button>`:''} <button class="sm gray" onclick="showOne('${it.id}')">Details</button></td></tr>`)}
+}
+window.retryOne=async key=>{const r=await fetch('/failures/'+key+'/retry',{method:'POST',headers:hdr()});const j=await r.json();
+  $('fout').style.display='';$('fout').textContent=JSON.stringify(j,null,2);
+  let n=0;const t=setInterval(async()=>{const rep=await (await fetch('/report/'+key)).json();
+    if(rep.status==='DONE'||rep.status==='FAILED'||++n>20){clearInterval(t);$('fout').textContent='Retry result:\n'+JSON.stringify({status:rep.status,attempts:rep.attempts,error:rep.error,decision:rep.result?rep.result.decision:null},null,2);refreshFailures();if(batchId)refreshBatch()}},1500)};
+window.showOne=async key=>{const j=await (await fetch('/failures/'+key)).json();$('fout').style.display='';$('fout').textContent=JSON.stringify(j,null,2)};
+$('frefresh').onclick=refreshFailures;$('fall').onchange=refreshFailures;
+refreshFailures();
 </script></body></html>
