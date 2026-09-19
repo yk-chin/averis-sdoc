@@ -238,11 +238,14 @@ _PROMPT_VERSION = _prompt_version()
 
 
 def _cache_key(email: dict) -> str:
-    """Cache by prompt version + email content; switching within the model chain is treated as equivalent, the answering model is recorded in the value for audit."""
+    """Cache by prompt version + everything the prompt is built from (subject, body, attachment names);
+    switching within the model chain is treated as equivalent, the answering model is recorded in the value for audit."""
     h = hashlib.sha1()
     h.update(_PROMPT_VERSION.encode()); h.update(b"\0")
     h.update((email.get("subject") or "").encode("utf-8", "replace")); h.update(b"\0")
-    h.update((email.get("body") or "").encode("utf-8", "replace"))
+    h.update((email.get("body") or "").encode("utf-8", "replace")); h.update(b"\0")
+    names = sorted(os.path.basename(a) for a in (email.get("attachments") or []))   # the prompt lists them
+    h.update("\n".join(names).encode("utf-8", "replace"))
     return h.hexdigest()
 
 

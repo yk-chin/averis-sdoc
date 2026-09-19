@@ -201,3 +201,12 @@ def test_review_detail_carries_the_true_cause(tmp_path):
     details = {}
     out = decide({"email_id": "m", "subject": "x", "body": "Please compare the SI and draft BL and confirm.", "attachments": []}, tmp_path, details=details)
     assert out["review_reason"] == "missing_attachment" and "neither SI nor BL" in details["review_detail"][0]
+
+
+# ---------------------------------------------------------------- F2: the LLM cache key covers everything the prompt contains
+def test_llm_cache_key_includes_attachment_names():
+    from pipeline.classify_llm import _cache_key
+    base = {"subject": "s", "body": "b", "attachments": []}
+    with_si = dict(base, attachments=["attachments/e_SI.txt"])
+    assert _cache_key(base) != _cache_key(with_si)                      # attachment names are part of the prompt
+    assert _cache_key(dict(base, attachments=["x/b_BL.txt", "x/a_SI.txt"])) == _cache_key(dict(base, attachments=["x/a_SI.txt", "x/b_BL.txt"]))  # order-insensitive
