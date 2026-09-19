@@ -126,12 +126,14 @@ def compare_field(
     if spec.kind is FieldKind.PORT:
         pa, pb = normalize_port(si_raw), normalize_port(bl_raw)
         same, why = ports_match(pa, pb)
+        # display: name first, code in brackets — a bare code hides *why* two ports differ
+        da = f"{pa.name} ({pa.unlocode})" if pa.name and pa.unlocode else pa.key()
+        db = f"{pb.name} ({pb.unlocode})" if pb.name and pb.unlocode else pb.key()
         if same is None:
-            return mk(Outcome.UNDETERMINED, pa.key(), pb.key(), why, 0.3)
+            return mk(Outcome.UNDETERMINED, da, db, why, 0.3)
         if same:
-            return mk(Outcome.NORMALIZED_MATCH, pa.key(), pb.key(),
-                      f"same port ({why})", 0.97)
-        return mk(Outcome.MISMATCH, pa.key(), pb.key(), f"different port ({why})", 0.95)
+            return mk(Outcome.NORMALIZED_MATCH, da, db, f"same port ({why})", 0.97)
+        return mk(Outcome.MISMATCH, da, db, f"different port ({why})", 0.95)
 
     # ---------------- COUNT ----------------
     if spec.kind is FieldKind.COUNT:
