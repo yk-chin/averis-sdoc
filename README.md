@@ -1,90 +1,115 @@
-# shipdoc-core
+# ShipDoc
 
-Averis x Monash Hackathon 2026 — 航运单证核对的**确定性内核**。
+Averis × Monash Hackathon 2026 — shipping-document intake for a BPO documentation team.
 
-零 LLM、零网络、纯函数。同样输入永远得到同样输出，可单测、可审计、可在 Q&A 里逐行解释。
+An email arrives. ShipDoc classifies it, parses the attached Shipping Instruction (SI) and draft Bill of Lading (BL), compares the seven fields that matter, and escalates only what a person genuinely needs to look at — **without creating false alarms**.
 
-## 为什么要有这一层
+**Live API:** https://shipdoc-api-705106212012.asia-southeast1.run.app (Cloud Run, Singapore; LLM via Vertex AI)
 
-多数队伍会把 SI 和 BL 一起丢给 LLM 问"哪里不一样"。那样做不可复现、不可审计、会幻觉出假警报——
-而用例明确要求 *identifying the right discrepancies **without creating false alarms***。
+## Results on the organiser's v2 dataset (520 emails)
 
-本包承担比对的全部职责，LLM 只负责抽取：
-
-```
-LLM / Vision  →  抽取字段 + 置信度 + 原文出处
-                        ↓  schema 强校验
-shipdoc_core  →  别名归一 → 值规范化 → 逐字段比对 → 判定 + 证据
-                        ↓
-置信度路由    →  高置信自动出报告 / 低置信转人工复核
-```
-
-## 模块
-
-| 模块 | 职责 |
+| Axis | Score |
 |---|---|
-| `fields.py` | 七字段本体 + 别名表 + **近义陷阱标签**（Place of Receipt ≠ Port of Loading） |
-| `normalize.py` | 公司名 / 港口(含 UN-LOCODE) / 数量 / 重量(含单位换算) 规范化 |
-| `compare.py` | 确定性比对器，输出带证据的 `FieldResult` 与 `ComparisonReport` |
-| `evaluate.py` | PRF、混淆矩阵、字段级指标、**置信度校准 (ECE)**、**成本敏感阈值优化** |
+| final_score | **1.0000** |
+| Email classification (macro-F1, 5 classes) | 1.0000 |
+| Defect detection (F1) | 1.0000 |
+| End-to-end (right email, right fields) | 1.0000 (46/46) |
+| Escalation precision / recall | 1.000 / 1.000 (20 of 20) |
 
-## 环境准备
+Trajectory: 0.766 (rules only) → 0.890 (LLM fallback) → 0.891 (intent-aware escalation) → 1.000 (comparison fixes). See `evals/history.jsonl` and `evals/progress.png`.
+
+Six semantics-preserving perturbations of the dataset (label synonyms, company-suffix spelling, weight units, UN/LOCODE vs port names, untagged attachment names) all score 1.000 after hardening — `docs/PERTURBATION_REPORT.md`.
+
+## How it works
+
+```
+email ──► rules (body only)  ──conf ≥ 0.80──► category
+              │ conf < 0.80
+              ▼
+          Gemini (structured output, pydantic-validated, model fallback chain, cached)
+                                                     │
+attachments ──► filename tag > content fingerprint ──► SI / BL
+                                                     │
+          deterministic core: alias resolution → normalisation → field-by-field compare
+                                                     │
+          OK  |  MISMATCH + defect fields  |  NEEDS_REVIEW (missing_attachment / unreadable /
+                                              wrong_doc_type / missing_value)
+```
+
+Why a deterministic core: most teams hand the SI and BL to an LLM and ask "what differs". That is not reproducible, not auditable, and hallucinates false alarms. Here the LLM only classifies emails when the rules are unsure; every comparison is a pure function with evidence (raw value, normalised value, reason, confidence) that can be explained line by line.
+
+| Module | Role |
+|---|---|
+| `shipdoc_core/fields.py` | The seven-field ontology, label aliases, and **near-miss traps** (Place of Receipt ≠ Port of Loading) |
+| `shipdoc_core/normalize.py` | Company names (suffixes, "on behalf of"), ports (names + UN/LOCODE), counts, weights with unit conversion |
+| `shipdoc_core/compare.py` | Deterministic comparator → `FieldResult` with evidence, `ComparisonReport` |
+| `shipdoc_core/evaluate.py` | PRF, confusion, **confidence calibration (ECE)**, **cost-sensitive threshold optimisation** |
+| `pipeline/classify.py` | Rule-based email classification (body only — subjects are deliberately misleading in the data) and the attachment-intent check |
+| `pipeline/classify_llm.py` | Gemini fallback via `google-genai`: `LLM_PROVIDER=aistudio` (API key) or `vertex` (service-account ADC) |
+| `pipeline/parse_doc.py`, `parse_office.py` | txt / pdf / docx / xlsx → "Label: Value" → fields |
+| `pipeline/run.py` | End-to-end pipeline → `submission.json` |
+| `api/main.py` | FastAPI service (`/process`, `/batch`, `/report/{id}`, `/health`) |
+
+Design invariants:
+1. `compare.py` and `normalize.py` never import an LLM or network library.
+2. When unsure → `UNDETERMINED` → a human. Never guess.
+3. Formatting-only differences must be `NORMALIZED_MATCH`, never a mismatch.
+4. Every verdict carries a reason and the before/after values.
+
+## Setup
 
 ```bash
-python -m pip install openpyxl python-docx pdfplumber pytest google-genai pydantic
-cp .env.example .env              # 填入 GEMINI_API_KEY 等（见 .env.example 注释）
+python -m pip install -r requirements.txt pytest
+cp .env.example .env          # add GEMINI_API_KEY for local runs (see comments in the file)
 ```
 
-主办方数据集**不在本仓库中**（已被 `.gitignore` 排除）。把主办方 bundle 的 `inbox/` 和
-`attachments/` 放到 `./data/` 下：
+The organiser's dataset is **not** in this repository (`.gitignore`). Put the bundle's `inbox/` and `attachments/` under `./data/`:
 
 ```
 data/
-  inbox/          520 个 *.json
-  attachments/    250 个附件（txt / pdf / xlsx / docx）
+  inbox/          520 × *.json
+  attachments/    250 files (txt / pdf / xlsx / docx)
 ```
 
-## 运行
+## Run
 
 ```bash
-python pipeline/run.py ./data submission.json
+python pipeline/run.py ./data submission.json      # pipeline → submission.json
+python -m pytest tests/ -q                          # 55 tests
+python -m uvicorn api.main:app --port 8090          # the API locally
 ```
 
-## 快速验证
+## Self-evaluation (black box)
 
-```bash
-python -m pytest tests/ -q        # 28 passed
-```
-
-```python
-from shipdoc_core import compare_documents
-rep = compare_documents("EM-001", si_fields, bl_fields)
-print(rep.render())
-# Email: EM-001
-#   [MISMATCH] Container Count: SI: 3 / BL: 4  — 集装箱数量不同：SI 3 / BL 4
-```
-
-## 自评方式（黑盒打分）
-
-我们使用**主办方提供的 Docker 打分服务**（`sdoc-hackathon-docker`，`docker compose up`）
-的 `POST /submit` 端点做自评：
+We score ourselves against the organiser's Docker scoring service (`sdoc-hackathon-docker`, `docker compose up`) through its `POST /submit` endpoint:
 
 ```bash
 python scripts_eval.py ./data --server http://localhost:8080
 ```
 
-该脚本生成 `submission.json` → POST 到 `/submit` → 拿回分数 → 追加到
-`evals/history.jsonl`，并与上一次对比。
+The script builds `submission.json`, posts it, and appends the returned scores to `evals/history.jsonl`. **We read only the aggregate scores** (`final_score`, `stage1_macro_f1`, `defect_f1`, `end_to_end`, `esc_precision`). We never read, parse, or copy `ground_truth.json`; the service keeps `REVEAL_GT` off and the ground truth is used server-side only. That is the black-box setup the organiser designed — we see the score, not the answers, so the system has to genuinely generalise.
 
-**我们仅读取 `/submit` 返回的聚合分数**（`final_score`、`stage1_macro_f1`、
-`defect_f1`、`end_to_end`、`esc_precision`），**不读取、不解析、不复制
-`ground_truth.json` 的任何内容**。打分服务默认 `REVEAL_GT` 关闭，ground truth 只在
-服务端内部使用，不经任何端点返回——这正是主办方设计的黑盒用法，我们看得到分数、
-看不到答案，系统必须真正泛化。
+Other evaluation scripts:
 
-## 设计不变量
+- `scripts_calibration.py` — reliability diagram + ECE, cost-sensitive threshold sweep, score progress (`evals/*.png`). The cost constants at the top are placeholders until Averis confirms real ratios.
+- `scripts_perturb.py` — the perturbation tests (`docs/PERTURBATION_REPORT.md`).
 
-1. `compare.py` 与 `normalize.py` **禁止** import 任何 LLM / 网络库。
-2. 拿不准就 `UNDETERMINED` → 转人工，**绝不猜**。
-3. 仅格式差异必须判为 `NORMALIZED_MATCH`，**不得报为 mismatch**。
-4. 每个判定都带 `reason` 与规范化前后的值，可追溯。
+## API
+
+| Endpoint | Auth | Description |
+|---|---|---|
+| `GET /` | — | Test page (works on a phone) |
+| `GET /health` | — | Liveness; `?deep=1` makes one real LLM call |
+| `POST /process` | `X-API-Key` | One email → `decision` + `evidence` (classification basis, parsed attachments, seven `FieldResult`s, readable report) |
+| `POST /batch` | `X-API-Key` | Up to 200 emails |
+| `GET /report/{email_id}` | — | Most recent result (instance memory) |
+
+Request body: `{"email_id", "from", "subject", "body", "attachments": [{"name", "content_base64"} or {"name", "text"}]}`.
+
+Deployment details, runtime identity, and the redeploy command: `docs/DEPLOY.md`.
+
+## Documents
+
+- `docs/FINAL_ROUND_RISKS.md` — the dataset-shape assumptions behind each fix and what breaks if the final-round data differs
+- `docs/PERTURBATION_REPORT.md` — perturbation tests before / after hardening
+- `EVAL.md` — the evaluation loop

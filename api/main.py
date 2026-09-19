@@ -1,16 +1,16 @@
 """
-shipdoc API —— 把流水线包成服务
-==============================
-POST /process        一封邮件（附件内联）→ 判定 + 每字段证据 + 可读报告
-POST /batch          批量
-GET  /report/{id}    取回最近一次 /process 或 /batch 的结果（进程内存；实例回收后即失效）
-GET  /health         存活；?deep=1 时真调一次 LLM，验证云上 Vertex IAM 认证
-GET  /               极简测试页（手机可用）
+ShipDoc API - the pipeline as a service
+=======================================
+POST /process        one email (attachments inline) -> decision + per-field evidence + readable report
+POST /batch          up to 200 emails
+GET  /report/{id}    most recent result for an email_id (instance memory; gone when the instance is recycled)
+GET  /health         liveness; ?deep=1 makes one real LLM call to verify Vertex IAM auth in the cloud
+GET  /               minimal test page (works on a phone)
 
-认证：环境变量 API_TOKEN 存在时（Cloud Run 上来自 Secret Manager），POST 端点要求
-      请求头 X-API-Key 匹配；GET 端点公开。本地不设 API_TOKEN 则全部公开。
-LLM：与流水线共用 pipeline/classify_llm.py —— LLM_PROVIDER=vertex 时用运行环境的 ADC
-      （Cloud Run 服务账号），不需要 API key。
+Auth: when API_TOKEN is set (from Secret Manager on Cloud Run) the POST endpoints require a
+      matching X-API-Key header; GET endpoints are public. Without API_TOKEN everything is open.
+LLM:  shared with the pipeline (pipeline/classify_llm.py). With LLM_PROVIDER=vertex it uses the
+      runtime's Application Default Credentials (the Cloud Run service account) - no API key.
 """
 from __future__ import annotations
 import base64, os, pathlib, sys, tempfile, time, uuid
@@ -25,24 +25,25 @@ sys.path.insert(0, str(ROOT))
 from pipeline.run import decide                         # noqa: E402
 from pipeline.classify_llm import classify_with_llm, STATS as LLM_STATS, MODEL_USAGE   # noqa: E402
 from pipeline.classify_llm import _load_dotenv                                     # noqa: E402
-_load_dotenv()                                            # 本地 .env；云上无此文件，走环境变量
+_load_dotenv()                                            # local .env; absent in the cloud, env vars are used
 
 APP_VERSION = os.getenv("APP_VERSION", "dev")
 API_TOKEN = os.getenv("API_TOKEN", "").strip()
 MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
 
-app = FastAPI(title="shipdoc API", version=APP_VERSION,
-              description="Shipping-document intake: classify → parse → compare SI vs draft BL → escalate.")
+app = FastAPI(title="ShipDoc API", version=APP_VERSION,
+              description="Shipping-document intake: classify the email, parse the attached SI and draft BL, "
+                          "compare the seven key fields deterministically, and escalate what a person must see.")
 
-_reports: dict[str, dict] = {}                         # email_id → 最近结果（进程内存）
+_reports: dict[str, dict] = {}                         # email_id -> most recent result (instance memory)
 _started = time.time()
 
 
-# ----------------------------------------------------------------------------- 模型
+# ----------------------------------------------------------------------------- models
 class Attachment(BaseModel):
-    name: str = Field(..., description="文件名，如 email_001_SI.txt；无 _SI/_BL 标记时按内容识别")
-    content_base64: Optional[str] = Field(None, description="二进制内容（pdf/docx/xlsx）base64")
-    text: Optional[str] = Field(None, description="纯文本内容（txt）")
+    name: str = Field(..., description="File name, e.g. email_001_SI.txt. Names containing _SI / _BL are routed by name; otherwise the document type is detected from content.")
+    content_base64: Optional[str] = Field(None, description="Binary content (pdf / docx / xlsx), base64-encoded")
+    text: Optional[str] = Field(None, description="Plain-text content (txt)")
 
 
 class EmailIn(BaseModel):
@@ -59,18 +60,18 @@ class BatchIn(BaseModel):
     emails: list[EmailIn]
 
 
-# ----------------------------------------------------------------------------- 工具
+# ----------------------------------------------------------------------------- helpers
 def _check_key(x_api_key: Optional[str]) -> None:
     if API_TOKEN and x_api_key != API_TOKEN:
         raise HTTPException(status_code=401, detail="missing or invalid X-API-Key")
 
 
 def _materialise(email: EmailIn, workdir: pathlib.Path) -> dict:
-    """把内联附件写到临时目录，返回流水线期望的 email dict。"""
+    """Write inline attachments to a temp dir; return the email dict the pipeline expects."""
     att_dir = workdir / "attachments"; att_dir.mkdir(parents=True, exist_ok=True)
     rels = []
     for a in email.attachments:
-        name = pathlib.Path(a.name).name                       # 去掉路径成分
+        name = pathlib.Path(a.name).name                       # strip any path component
         if not name:
             raise HTTPException(422, "attachment name is empty")
         if a.content_base64 is not None:
@@ -104,8 +105,8 @@ def _process_one(email: EmailIn) -> dict:
     return result
 
 
-# ----------------------------------------------------------------------------- 端点
-@app.get("/health")
+# ----------------------------------------------------------------------------- endpoints
+@app.get("/health", summary="Liveness and configuration; ?deep=1 also exercises the LLM")
 def health(deep: int = 0):
     info: dict[str, Any] = {
         "status": "ok", "version": APP_VERSION, "uptime_s": round(time.time() - _started),
@@ -125,13 +126,13 @@ def health(deep: int = 0):
     return info
 
 
-@app.post("/process")
+@app.post("/process", summary="Process one email: decision + per-field evidence")
 def process(email: EmailIn, x_api_key: Optional[str] = Header(default=None)):
     _check_key(x_api_key)
     return _process_one(email)
 
 
-@app.post("/batch")
+@app.post("/batch", summary="Process up to 200 emails")
 def batch(payload: BatchIn, x_api_key: Optional[str] = Header(default=None)):
     _check_key(x_api_key)
     if len(payload.emails) > 200:
@@ -146,7 +147,7 @@ def batch(payload: BatchIn, x_api_key: Optional[str] = Header(default=None)):
     return {"count": len(results), "summary": summary, "results": results}
 
 
-@app.get("/report/{email_id}")
+@app.get("/report/{email_id}", summary="Return the most recent result for an email_id (instance memory)")
 def report(email_id: str):
     r = _reports.get(email_id)
     if r is None:
@@ -154,7 +155,7 @@ def report(email_id: str):
     return r
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
 def index():
     return (ROOT / "api" / "index.html").read_text(encoding="utf-8")
 

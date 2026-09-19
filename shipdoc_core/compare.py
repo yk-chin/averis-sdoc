@@ -98,29 +98,29 @@ def compare_field(
         )
 
     if not _present(si_raw):
-        return mk(Outcome.MISSING_SI, None, None, "SI 缺少该字段", 1.0)
+        return mk(Outcome.MISSING_SI, None, None, "field missing on SI", 1.0)
     if not _present(bl_raw):
-        return mk(Outcome.MISSING_BL, None, None, "BL 缺少该字段", 1.0)
+        return mk(Outcome.MISSING_BL, None, None, "field missing on BL", 1.0)
 
     if basic_clean(str(si_raw)) == basic_clean(str(bl_raw)):
-        return mk(Outcome.EXACT, str(si_raw), str(bl_raw), "原文一致", 1.0)
+        return mk(Outcome.EXACT, str(si_raw), str(bl_raw), "identical text", 1.0)
 
     # ---------------- PARTY ----------------
     if spec.kind is FieldKind.PARTY:
         a, b = normalize_party(si_raw), normalize_party(bl_raw)
         if not a or not b:
-            return mk(Outcome.UNDETERMINED, a, b, "规范化后为空，无法比对", 0.3)
+            return mk(Outcome.UNDETERMINED, a, b, "empty after normalisation, cannot compare", 0.3)
         if a == b:
-            return mk(Outcome.NORMALIZED_MATCH, a, b, "仅公司名写法差异", 0.98)
+            return mk(Outcome.NORMALIZED_MATCH, a, b, "same party, different spelling", 0.98)
         r = _fuzzy(a, b)
         if r >= PARTY_FUZZY_HIGH:
             return mk(Outcome.NORMALIZED_MATCH, a, b,
-                      f"高度相似({r:.2f})，判为同一主体", round(r, 3))
+                      f"highly similar ({r:.2f}), treated as the same party", round(r, 3))
         if r <= PARTY_FUZZY_LOW:
             return mk(Outcome.MISMATCH, a, b,
-                      f"主体名不同(相似度 {r:.2f})", round(1 - r, 3))
+                      f"different party (similarity {r:.2f})", round(1 - r, 3))
         return mk(Outcome.UNDETERMINED, a, b,
-                  f"相似度 {r:.2f} 落在灰区，需人工确认", round(r, 3))
+                  f"similarity {r:.2f} is in the grey zone, needs a human", round(r, 3))
 
     # ---------------- PORT ----------------
     if spec.kind is FieldKind.PORT:
@@ -130,28 +130,28 @@ def compare_field(
             return mk(Outcome.UNDETERMINED, pa.key(), pb.key(), why, 0.3)
         if same:
             return mk(Outcome.NORMALIZED_MATCH, pa.key(), pb.key(),
-                      f"同一港口（{why}）", 0.97)
-        return mk(Outcome.MISMATCH, pa.key(), pb.key(), f"港口不同（{why}）", 0.95)
+                      f"same port ({why})", 0.97)
+        return mk(Outcome.MISMATCH, pa.key(), pb.key(), f"different port ({why})", 0.95)
 
     # ---------------- COUNT ----------------
     if spec.kind is FieldKind.COUNT:
         a, b = normalize_count(si_raw), normalize_count(bl_raw)
         if a is None or b is None:
-            return mk(Outcome.UNDETERMINED, a, b, "数量无法解析", 0.2)
+            return mk(Outcome.UNDETERMINED, a, b, "count could not be parsed", 0.2)
         if a == b:
-            return mk(Outcome.NORMALIZED_MATCH, a, b, "数量一致（写法不同）", 0.99)
-        return mk(Outcome.MISMATCH, a, b, f"集装箱数量不同：SI {a} / BL {b}", 0.99)
+            return mk(Outcome.NORMALIZED_MATCH, a, b, "same count, different notation", 0.99)
+        return mk(Outcome.MISMATCH, a, b, f"container count differs: SI {a} / BL {b}", 0.99)
 
     # ---------------- WEIGHT ----------------
     a, b = normalize_weight_kg(si_raw), normalize_weight_kg(bl_raw)
     if a is None or b is None:
-        return mk(Outcome.UNDETERMINED, a, b, "重量无法解析", 0.2)
+        return mk(Outcome.UNDETERMINED, a, b, "weight could not be parsed", 0.2)
     tol = max(WEIGHT_ABS_TOL, abs(a) * WEIGHT_REL_TOL)
     if abs(a - b) <= tol:
         return mk(Outcome.NORMALIZED_MATCH, a, b,
-                  f"重量一致（差 {abs(a-b):.2f}kg，在容差 {tol:.2f}kg 内）", 0.98)
+                  f"same weight (diff {abs(a-b):.2f} kg within tolerance {tol:.2f} kg)", 0.98)
     return mk(Outcome.MISMATCH, a, b,
-              f"毛重不同：SI {a:g}kg / BL {b:g}kg（差 {abs(a-b):g}kg）", 0.99)
+              f"gross weight differs: SI {a:g} kg / BL {b:g} kg (diff {abs(a-b):g} kg)", 0.99)
 
 
 @dataclass
@@ -188,7 +188,7 @@ class ComparisonReport:
             elif r.needs_review:
                 lines.append(f"  [REVIEW]   {r.label}: {r.reason}")
         if self.needs_human_review:
-            lines.append(f"  → 已转人工复核：{'; '.join(self.review_reasons)}")
+            lines.append(f"  -> escalated for human review: {'; '.join(self.review_reasons)}")
         return "\n".join(lines)
 
 
@@ -224,7 +224,7 @@ def compare_documents(
         if r.needs_review:
             reasons.append(f"{r.label}: {r.reason}")
         elif r.confidence < review_threshold:
-            reasons.append(f"{r.label}: 置信度 {r.confidence:.2f} 低于阈值 {review_threshold}")
+            reasons.append(f"{r.label}: confidence {r.confidence:.2f} below threshold {review_threshold}")
             r.needs_review = True
 
     return ComparisonReport(
