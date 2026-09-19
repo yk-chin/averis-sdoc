@@ -75,11 +75,21 @@ class FirestoreStore:
         self._db.collection(col).document(key).set(patch, merge=True)
 
     def list(self, col: str, where: Optional[tuple[str, str, Any]] = None, limit: int = 100) -> list[dict]:
+        from google.api_core.exceptions import FailedPrecondition
         from google.cloud.firestore_v1 import FieldFilter
-        q = self._db.collection(col)
+        base = self._db.collection(col)
         if where:
-            q = q.where(filter=FieldFilter(*where))
-        q = q.order_by("updated", direction="DESCENDING").limit(limit)
+            try:
+                q = base.where(filter=FieldFilter(*where)).order_by("updated", direction="DESCENDING").limit(limit)
+                return [dict(s.to_dict(), id=s.id) for s in q.stream()]
+            except FailedPrecondition:
+                # composite index (field + updated) not built yet: order only, filter in memory.
+                # The index is created in docs/DEPLOY.md; this keeps the API usable meanwhile.
+                f, op, v = where
+                rows = [dict(s.to_dict(), id=s.id) for s in
+                        base.order_by("updated", direction="DESCENDING").limit(limit * 10).stream()]
+                return [r for r in rows if (r.get(f) == v if op == "==" else r.get(f) != v)][:limit]
+        q = base.order_by("updated", direction="DESCENDING").limit(limit)
         return [dict(s.to_dict(), id=s.id) for s in q.stream()]
 
 
