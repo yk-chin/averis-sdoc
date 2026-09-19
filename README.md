@@ -113,6 +113,13 @@ Auth is tiered by cost: single-email processing needs no credentials (10 request
 
 Deployment details, runtime identity, and the redeploy command: `docs/DEPLOY.md`.
 
+## Future roadmap (not implemented)
+
+- **OCR / vision for scanned PDFs.** Image-only PDFs are currently escalated as `unreadable`. In the organiser's data the five unreadable documents are gold `unreadable`, so this is deliberately out of scope for the hackathon build.
+- **LLM extraction fallback** for documents the deterministic parser cannot read (non-tabular layouts, free-text letters). Today: `unreadable` / `missing_value` escalation, never a guess.
+- **Learned confidence calibration.** Extraction and verdict confidences are fixed per outcome kind; `scripts_calibration.py` measures them but nothing is fitted yet.
+- **Firestore-transaction idempotency** across instances (today: idempotency key + status check, adequate at hackathon scale).
+
 ## Documents
 
 - `docs/FINAL_ROUND_RISKS.md` — the dataset-shape assumptions behind each fix and what breaks if the final-round data differs

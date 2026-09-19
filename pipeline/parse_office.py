@@ -95,7 +95,7 @@ def office_to_text(path) -> str | None:
             return docx_to_kv_text(p)
         if ext == ".pdf":
             txt = pdf_to_kv_text(p)
-            # image-only scan: pdfplumber extracts no text -> genuinely unreadable, hand to OCR/Vision
+            # image-only scan: pdfplumber extracts no text -> reported as unreadable (no OCR in this system)
             return txt if txt and len(txt.strip()) > 40 else None
         return None
     except Exception:

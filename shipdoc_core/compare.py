@@ -82,7 +82,8 @@ def compare_field(
     si_conf: float = 1.0,
     bl_conf: float = 1.0,
 ) -> FieldResult:
-    """Compare one field. si_conf / bl_conf are the extraction-stage (LLM/OCR) confidences."""
+    """Compare one field. si_conf / bl_conf are the parser's extraction confidences for the two values
+    (how the label was matched and where the value came from; see pipeline/parse_doc.py)."""
     spec = FIELD_BY_KEY[field_key]
     extract_conf = min(si_conf, bl_conf)
 
@@ -214,7 +215,7 @@ def compare_documents(
     """
     Compare the SI and BL attached to one email.
 
-    si / bl: {field_key: value} - produced by the extraction layer (LLM/OCR) and schema-validated
+    si / bl: {field_key: value} - produced by the deterministic parser (pipeline/parse_doc.py)
     review_threshold: a field verdict whose confidence (comparison confidence capped by the extraction
                       confidences si_conf / bl_conf from the parser) falls below it is flagged, and
                       needs_human_review then turns the email into NEEDS_REVIEW in run.py. Verdict

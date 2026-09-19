@@ -19,7 +19,7 @@ OFFICE_EXT = {".pdf", ".docx", ".xlsx"}
 
 
 def read_attachment(root: pathlib.Path, rel: str) -> tuple[str | None, str]:
-    """Returns (text, source). Non-text returns (None, ext) - handed to the OCR/LLM layer."""
+    """Returns (text, source). (None, ext) when no text could be extracted - the email is then escalated as unreadable."""
     p = root / rel
     ext = p.suffix.lower()
     if not p.exists():

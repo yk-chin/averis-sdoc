@@ -1,15 +1,16 @@
 """
-Document parser - deterministic first, AI as fallback
-=====================================================
-Observation: plain-text SI/BL files are a regular "Label: Value" structure that a
-**deterministic parser handles outright**. So we do not pay for an LLM call per document:
+Document parser - deterministic
+===============================
+SI/BL documents are a regular "Label: Value" structure (plain text, or pdf/docx/xlsx normalised to
+that shape by parse_office.py). A deterministic parser handles them outright, so no LLM call is spent
+per document: every field carries an extraction confidence (how the label matched, where the value
+came from), and anything the parser cannot read is escalated to a person as `unreadable` /
+`missing_value` rather than guessed.
 
-    deterministic parse -> success: use it directly (decided_by="rule")
-                        -> failure / missing fields: only then call LLM/Vision (decided_by="llm")
-
-For a BPO like Averis with 300+ clients, the **unit cost** of document handling is the business.
-A system that is 90 % rules / 10 % LLM and one that is 100 % LLM are two different businesses
-at scale. This belongs in the pitch.
+For a BPO like Averis with 300+ clients, the **unit cost** of document handling is the business:
+zero LLM calls on the document path is a deliberate design choice, not a gap.
+(An LLM / vision extraction fallback for documents the parser cannot read is on the roadmap in
+README.md; it is not implemented.)
 """
 from __future__ import annotations
 
