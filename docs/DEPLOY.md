@@ -28,7 +28,8 @@ Service: `https://shipdoc-api-705106212012.asia-southeast1.run.app`　Project: `
 | `POST /failures/{key}/retry` | X-API-Key | Re-enqueue from the stored input (`clear_fault` strips demo fault injection). Success marks the item RECOVERED |
 | `POST /admin/chaos?enabled=true\|false` | X-API-Key | Demo switch: every task attempt fails while enabled |
 | `POST /tasks/process` | OIDC (Cloud Tasks) or X-API-Key | One attempt of one email; 503 asks Cloud Tasks to retry, 200 on success or after dead-lettering |
-| `GET /report/{id}` | - | Result by idempotency key or email_id, persisted in Firestore |
+| `GET /report/{id}` | - | Result by idempotency key or email_id, persisted in Firestore; includes `review` (if any) and `effective_decision` |
+| `POST /report/{id}/review` | X-API-Key | Human review: `{decision: confirmed|corrected, corrected_fields?, reviewer_note?, reviewer}` -> audit trail stored under `reports/{key}.review`; AI decision never overwritten; not used for submission.json |
 
 Request body: `{"email_id","from","subject","body","attachments":[{"name","content_base64"} or {"name","text"}]}`.
 Attachment names containing `_SI.`/`_BL.` are routed by name, otherwise by content fingerprint.

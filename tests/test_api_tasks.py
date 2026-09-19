@@ -183,3 +183,37 @@ def test_process_rate_limit_per_ip(monkeypatch):
     assert "Retry-After" in r.headers and "per minute" in r.json()["detail"]
     # another client is not affected
     assert client.post("/process", json=_email("rl"), headers={"X-Forwarded-For": "198.51.100.4"}).status_code == 200
+
+
+# ---------------------------------------------------------------- F8: human review keeps the AI decision and adds an audit trail
+def test_review_confirm_and_correct_keep_original(monkeypatch):
+    from fastapi.testclient import TestClient
+    import api.main as m
+    monkeypatch.setattr(m, "API_TOKEN", "secret")
+    m.store = MemoryStore()
+    client = TestClient(m.app)
+    key = client.post("/process", json=_email("rv-1")).json()["key"]
+    ai = client.get(f"/report/{key}").json()["result"]["decision"]
+    assert ai["status"] == "MISMATCH" and ai["defect_fields"] == ["container_count"]
+
+    assert client.post(f"/report/{key}/review", json={"decision": "confirmed", "reviewer": "ops"}).status_code == 401
+    r = client.post(f"/report/{key}/review", json={"decision": "confirmed", "reviewer": "ops", "reviewer_note": "checked"},
+                    headers={"X-API-Key": "secret"})
+    assert r.status_code == 200 and r.json()["review"]["human_decision"] == "confirmed"
+    assert r.json()["effective_decision"] == ai
+
+    r = client.post(f"/report/{key}/review", headers={"X-API-Key": "secret"},
+                    json={"decision": "corrected", "reviewer": "ops", "reviewer_note": "BL was later amended",
+                          "corrected_fields": {"status": "OK", "has_defect": False, "defect_fields": []}})
+    assert r.status_code == 200
+    rep = client.get(f"/report/{key}").json()
+    assert rep["result"]["decision"] == ai                                   # AI decision untouched
+    assert rep["review"]["original_ai_decision"] == ai
+    assert rep["review"]["reviewer"] == "ops" and rep["review"]["reviewed_at"] > 0
+    assert rep["effective_decision"]["status"] == "OK" and rep["effective_decision"]["defect_fields"] == []
+    assert rep["effective_decision"]["category"] == "BL_COMPARISON"          # untouched fields carried over
+    # by email_id too, and validation
+    assert client.get("/report/rv-1").json()["review"]["human_decision"] == "corrected"
+    assert client.post(f"/report/{key}/review", json={"decision": "corrected", "reviewer": "ops"}, headers={"X-API-Key": "secret"}).status_code == 422
+    assert client.post(f"/report/{key}/review", json={"decision": "corrected", "reviewer": "ops", "corrected_fields": {"nope": 1}}, headers={"X-API-Key": "secret"}).status_code == 422
+    assert client.post("/report/does-not-exist/review", json={"decision": "confirmed", "reviewer": "ops"}, headers={"X-API-Key": "secret"}).status_code == 404

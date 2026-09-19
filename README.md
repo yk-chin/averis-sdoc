@@ -106,6 +106,7 @@ Other evaluation scripts:
 | `GET /report/{id}` | — | Result by idempotency key or email_id (Firestore) |
 | `GET /failures` | `X-API-Key` | Dead-letter queue: emails that failed all 3 attempts, with reason and original input |
 | `POST /failures/{key}/retry` | `X-API-Key` | Retry a dead-lettered email |
+| `POST /report/{id}/review` | `X-API-Key` | Human-in-the-loop: `confirmed` or `corrected` (+ `corrected_fields`, `reviewer`, `reviewer_note`). Stores an audit trail (`original_ai_decision`, `human_decision`, `corrections`, `reviewed_at`, `reviewer`) next to the report; the AI decision is never overwritten and `GET /report/{id}` returns `effective_decision` |
 
 Request body: `{"email_id", "from", "subject", "body", "attachments": [{"name", "content_base64"} or {"name", "text"}]}`.
 

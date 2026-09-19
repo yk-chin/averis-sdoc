@@ -31,7 +31,7 @@ Failure handling ("handle processing failures visibly and allow retries"):
 """
 from __future__ import annotations
 import base64, collections, os, pathlib, sys, tempfile, threading, time, uuid
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -50,7 +50,8 @@ APP_VERSION = os.getenv("APP_VERSION", "dev")
 API_TOKEN = os.getenv("API_TOKEN", "").strip()
 MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
 RATE_LIMIT_PER_MIN = int(os.getenv("RATE_LIMIT_PER_MIN", "10"))   # anonymous POST /process, per client IP
-KEYED_ENDPOINTS = ["POST /batch", "GET /failures", "GET /failures/{key}", "POST /failures/{key}/retry", "POST /admin/chaos"]
+KEYED_ENDPOINTS = ["POST /batch", "GET /failures", "GET /failures/{key}", "POST /failures/{key}/retry",
+                   "POST /report/{id}/review", "POST /admin/chaos"]
 
 app = FastAPI(title="ShipDoc API", version=APP_VERSION,
               description="Shipping-document intake: classify the email, parse the attached SI and draft BL, "
@@ -81,6 +82,15 @@ class EmailIn(BaseModel):
 
 class BatchIn(BaseModel):
     emails: list[EmailIn]
+
+
+class ReviewIn(BaseModel):
+    """Human-in-the-loop: "let a person confirm or correct it, then update the report"."""
+    decision: Literal["confirmed", "corrected"]
+    corrected_fields: dict[str, Any] = Field(default_factory=dict,
+        description="Only for decision=corrected: the decision fields the reviewer changes, e.g. {\"status\": \"OK\", \"has_defect\": false, \"defect_fields\": []}")
+    reviewer_note: str = Field("", max_length=2000)
+    reviewer: str = Field(..., min_length=1, max_length=200)
 
 
 # ----------------------------------------------------------------------------- helpers
@@ -246,16 +256,64 @@ def batch_status(batch_id: str):
             "pending": pending, "duplicates": job.get("duplicates", 0), "items": rows}
 
 
+def _find_report(ident: str) -> tuple[str, dict]:
+    """By idempotency key, else the most recent report for that email_id. Returns (key, doc)."""
+    r = store.get(REPORTS, ident)
+    if r is not None:
+        return ident, r
+    hits = store.list(REPORTS, where=("email_id", "==", ident), limit=1)
+    if hits:
+        return hits[0]["id"], hits[0]
+    raise HTTPException(404, f"no report for {ident}")
+
+
+def _effective_decision(r: dict) -> Optional[dict]:
+    """The AI decision, with the reviewer's corrections applied when the review says 'corrected'.
+    The AI's original decision is never modified; this is a derived view."""
+    ai = (r.get("result") or {}).get("decision")
+    rev = r.get("review")
+    if ai is None:
+        return None
+    if rev and rev.get("human_decision") == "corrected":
+        return {**ai, **rev.get("corrections", {})}
+    return ai
+
+
 @app.get("/report/{ident}", summary="Result by idempotency key or email_id")
 def report(ident: str):
-    r = store.get(REPORTS, ident)
-    if r is None:                                     # fall back to the most recent report for that email_id
-        hits = store.list(REPORTS, where=("email_id", "==", ident), limit=1)
-        r = hits[0] if hits else None
-    if r is None:
-        raise HTTPException(404, f"no report for {ident}")
+    key, r = _find_report(ident)
     r.pop("traceback", None)                         # never part of a public response
+    r["key"] = key
+    r["effective_decision"] = _effective_decision(r)
     return r
+
+
+@app.post("/report/{ident}/review", summary="Human review: confirm or correct the AI decision (X-API-Key required)")
+def review_report(ident: str, body: ReviewIn, x_api_key: Optional[str] = Header(default=None)):
+    """Persists an audit trail next to the report - original_ai_decision / human_decision / corrections /
+    reviewed_at / reviewer - and never overwrites the AI's result. Not used by the pipeline or by
+    submission.json; it only changes what /report shows as effective_decision."""
+    _check_key(x_api_key)
+    key, r = _find_report(ident)
+    ai = (r.get("result") or {}).get("decision")
+    if ai is None:
+        raise HTTPException(409, f"report {key} has no AI decision yet (status {r.get('status')})")
+    if body.decision == "corrected" and not body.corrected_fields:
+        raise HTTPException(422, "decision=corrected requires corrected_fields")
+    unknown = set(body.corrected_fields) - set(ai)
+    if unknown:
+        raise HTTPException(422, f"corrected_fields contains unknown decision fields: {sorted(unknown)}")
+    review = {
+        "original_ai_decision": dict(ai),
+        "human_decision": body.decision,
+        "corrections": dict(body.corrected_fields) if body.decision == "corrected" else {},
+        "reviewer_note": body.reviewer_note,
+        "reviewer": body.reviewer,
+        "reviewed_at": now(),
+    }
+    store.update(REPORTS, key, {"review": review, "updated": now()})
+    r = store.get(REPORTS, key) or dict(r, review=review)
+    return {"key": key, "email_id": r.get("email_id"), "review": review, "effective_decision": _effective_decision(r)}
 
 
 @app.get("/failures", summary="The dead-letter queue (X-API-Key required)")
