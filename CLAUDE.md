@@ -1,8 +1,8 @@
 # CLAUDE.md - ShipDoc project conventions
 
-## Current state (2026-09-19, tag `day2-async`, see git log for commits)
+## Current state (2026-09-19, tag `prelim-hardened`, see git log for commits)
 
-**Score**: final_score **1.0000** on the v2 dataset, all four axes full marks (stage1_macro_f1 / defect_f1 / end_to_end / esc_precision).
+**Score**: final_score **1.0000** on the organiser's v2 dataset and on six semantics-preserving perturbations of it (all four axes: stage1_macro_f1 / defect_f1 / end_to_end / esc_precision). Not a claim about unseen data.
 Trajectory: 0.7660 (rules baseline) -> 0.8896 (LLM fallback) -> 0.8914 (intent-aware escalation) -> 1.0000 (three comparison fixes: ports / ON BEHALF OF / PDF interleave).
 
 **Perturbation tests** (`scripts_perturb.py`, `docs/PERTURBATION_REPORT.md`): all six perturbations P1-P5 at 1.0.
@@ -19,7 +19,7 @@ Before hardening P4b = 0.68 (LOCODE table too small) and P5 = 0.30 (attachments 
 **Known, not done** (`docs/FINAL_ROUND_RISKS.md`): R5 interleave generalisation - deliberately left as an honestly-labelled 8-line patch (a data artefact, not a structural gap). Done: R1 (Vertex, local ADC + Cloud Run), R3 (prefix relation between party names -> MISMATCH, before the similarity score), R6 (record model in `parse_doc`: value after the colon, else the next non-label line).
 **Cost parameters**: cost_missed=8 / false_alarm=1 / review=0.35 at the top of `scripts_calibration.py` are placeholders; Averis to confirm at Workshop 2 on 21 Sep.
 
-**Tests**: `python -m pytest tests/ -q` -> 73 passed (63 pipeline/core + 10 api layer).
+**Tests**: `python -m pytest tests/ -q` -> 78 passed (66 pipeline/core + 12 api layer).
 
 **Language**: everything in the repo and every demo-facing string is English; only literal dataset samples such as "Gross Weight毛重(KGS)" keep their Chinese.
 

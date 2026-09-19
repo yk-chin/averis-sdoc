@@ -16,6 +16,8 @@ An email arrives. ShipDoc classifies it, parses the attached Shipping Instructio
 | End-to-end (right email, right fields) | 1.0000 (46/46) |
 | Escalation precision / recall | 1.000 / 1.000 (20 of 20) |
 
+Precisely: these scores are **1.0 on the organiser's v2 dataset and on six semantics-preserving perturbations of it** (below). They are not a claim about unseen data; `docs/FINAL_ROUND_RISKS.md` lists what could break on different data.
+
 Trajectory: 0.766 (rules only) → 0.890 (LLM fallback) → 0.891 (intent-aware escalation) → 1.000 (comparison fixes). See `evals/history.jsonl` and `evals/progress.png`.
 
 Six semantics-preserving perturbations of the dataset (label synonyms, company-suffix spelling, weight units, UN/LOCODE vs port names, untagged attachment names) all score 1.000 after hardening — `docs/PERTURBATION_REPORT.md`.
@@ -75,7 +77,7 @@ data/
 
 ```bash
 python pipeline/run.py ./data submission.json      # pipeline → submission.json
-python -m pytest tests/ -q                          # 73 tests
+python -m pytest tests/ -q                          # 78 tests
 python -m uvicorn api.main:app --port 8090          # the API locally
 ```
 
