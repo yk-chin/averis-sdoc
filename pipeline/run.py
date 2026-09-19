@@ -11,10 +11,12 @@ from shipdoc_core.compare import compare_documents, Outcome
 from shipdoc_core.fields import FIELD_KEYS
 from pipeline.parse_doc import parse_text_document, ParsedDoc
 from pipeline.parse_office import office_to_text
-from pipeline.classify import classify_email
+from pipeline.classify import classify_email, expects_attachments
+from pipeline.classify_llm import classify_with_llm, STATS as LLM_STATS, MODEL_USAGE
 
 TEXT_EXT = {".txt"}
 OFFICE_EXT = {".pdf", ".docx", ".xlsx"}
+LLM_THRESHOLD = 0.80      # 规则置信度低于此值才调 LLM；BL_COMPARISON 分支全部 ≥0.80，不会调用
 
 
 def read_attachment(root: pathlib.Path, rel: str) -> tuple[str | None, str]:
@@ -55,6 +57,12 @@ def decide(email, root) -> dict:
     has_bl = any("_BL." in os.path.basename(a).upper() for a in atts)
     category, decided_by, conf = classify_email(email, has_si, has_bl)
 
+    # 规则优先、LLM 兜底：只在规则拿不准时调用；LLM 失败则保留规则结果
+    if conf < LLM_THRESHOLD:
+        llm = classify_with_llm(email)
+        if llm is not None:
+            category, decided_by = llm.category, "llm"
+
     out = {"category": category, "status": "OK", "review_reason": None,
            "has_defect": False, "defect_fields": [], "decided_by": decided_by}
 
@@ -63,6 +71,13 @@ def decide(email, root) -> dict:
 
     # --- 可靠性闸门：按 official review_reason 的四种原因逐级判定 ---
     if not has_si or not has_bl:
+        # 两种"没附件"要分开：
+        #   incomplete request —— 发件人以为文件已附上、要求比对（"compare the SI and draft BL"），
+        #                         文件却没到 → NEEDS_REVIEW / missing_attachment，需要人去催
+        #   普通待办           —— 发件人在索要文件（"please send the draft BL for checking"），
+        #                         手上本来没有可比对的东西 → OK，不是失败的比对
+        if not expects_attachments(email):
+            return out
         out.update(status="NEEDS_REVIEW", review_reason="missing_attachment")
         return out
 
@@ -72,8 +87,7 @@ def decide(email, root) -> dict:
             out.update(status="NEEDS_REVIEW", review_reason="missing_attachment")
         else:
             # 这里应接 OCR / Vision LLM。未接通时诚实上报 unreadable，不许猜。
-            out.update(status="NEEDS_REVIEW", review_reason="unreadable",
-                       decided_by="rule")
+            out.update(status="NEEDS_REVIEW", review_reason="unreadable")
         return out
 
     if not si.readable or not bl.readable:
@@ -116,12 +130,18 @@ def main(data_dir: str, out_path: str = "submission.json"):
         rec = decide(email, root)
         submission[email["email_id"]] = rec
         stats[rec["category"]] += 1
+        stats["decided_by:" + rec["decided_by"]] += 1
         if rec["category"] == "BL_COMPARISON":
             stats["status:" + rec["status"]] += 1
             if rec["review_reason"]:
                 stats["reason:" + rec["review_reason"]] += 1
             for fld in rec["defect_fields"]:
                 stats["field:" + fld] += 1
+
+    for k, v in LLM_STATS.items():
+        stats["llm:" + k] = v
+    for m, n in MODEL_USAGE.items():
+        stats["llm_model:" + m] = n
 
     json.dump(submission, open(out_path, "w", encoding="utf-8"),
               indent=2, ensure_ascii=False)

@@ -13,5 +13,8 @@ __pycache__/
 .env
 .claude/settings.local.json
 
+# LLM 调用缓存
+.cache/
+
 # eval 图表
 evals/*.png
