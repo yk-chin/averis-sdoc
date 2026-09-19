@@ -1,13 +1,13 @@
 """
-确定性比对器 (Deterministic Comparator)
-======================================
-SI 是基准（用例原文：the SI is the reference for this check）。
+Deterministic Comparator
+========================
+The SI is the reference (use case: "the SI is the reference for this check").
 
-设计铁律：
-  1. 本文件零 LLM、零网络。纯函数。同样输入永远同样输出。
-  2. 每个判定都带 evidence（原始值 + 规范化值 + 理由），可审计。
-  3. 拿不准 → UNDETERMINED → 走人工，绝不猜。
-     用例原文："escalate to a person with the relevant context,
+Iron rules:
+  1. No LLM, no network in this file. Pure functions. Same input, same output.
+  2. Every verdict carries evidence (raw value + normalised value + reason) and is auditable.
+  3. Unsure -> UNDETERMINED -> a human. Never guess.
+     Use case: "escalate to a person with the relevant context,
      rather than guessing or failing silently."
 """
 
@@ -25,20 +25,20 @@ from .normalize import (
 
 
 class Outcome(str, Enum):
-    EXACT = "exact"                    # 原文就一样
-    NORMALIZED_MATCH = "normalized"    # 仅格式差异 —— 绝不报为 mismatch
-    MISMATCH = "mismatch"              # 真实差异
+    EXACT = "exact"                    # identical as written
+    NORMALIZED_MATCH = "normalized"    # formatting difference only - never reported as a mismatch
+    MISMATCH = "mismatch"              # real difference
     MISSING_SI = "missing_si"
     MISSING_BL = "missing_bl"
-    UNDETERMINED = "undetermined"      # 无法可靠判定 → 人工
+    UNDETERMINED = "undetermined"      # cannot decide reliably -> human
 
 
-# 重量容差：千分之一，且至少 0.5kg。用于吸收单位换算与四舍五入误差，
-# 而不是掩盖真实差异（3 vs 4 个柜、22000 vs 23000 kg 都远超容差）。
+# Weight tolerance: 0.1 %, at least 0.5 kg. Absorbs unit-conversion and rounding error
+# without hiding real differences (3 vs 4 containers, 22000 vs 23000 kg are far beyond it).
 WEIGHT_REL_TOL = 0.001
 WEIGHT_ABS_TOL = 0.5
 
-# 公司名模糊相似度灰区：低于 LOW 判不同，高于 HIGH 判相同，中间交人工。
+# Company-name fuzzy grey zone: below LOW -> different, above HIGH -> same, in between -> human.
 PARTY_FUZZY_HIGH = 0.94
 PARTY_FUZZY_LOW = 0.75
 
@@ -54,7 +54,7 @@ class FieldResult:
     si_norm: str | None
     bl_norm: str | None
     reason: str
-    confidence: float          # 本字段判定的可信度 0-1
+    confidence: float          # confidence of this field verdict, 0-1
     needs_review: bool
 
     def to_dict(self) -> dict:
@@ -79,7 +79,7 @@ def compare_field(
     si_conf: float = 1.0,
     bl_conf: float = 1.0,
 ) -> FieldResult:
-    """比对单个字段。si_conf/bl_conf 是抽取阶段（LLM/OCR）给出的置信度。"""
+    """Compare one field. si_conf / bl_conf are the extraction-stage (LLM/OCR) confidences."""
     spec = FIELD_BY_KEY[field_key]
     extract_conf = min(si_conf, bl_conf)
 
@@ -178,10 +178,10 @@ class ComparisonReport:
         }
 
     def render(self) -> str:
-        """人类可读的差异报告 —— 直接用于 demo 视频和人工复核界面。"""
+        """Human-readable difference report - used as-is in the demo video and the review UI."""
         lines = [f"Email: {self.email_id}"]
         if not self.has_mismatch and not self.needs_human_review:
-            lines.append("No mismatch detected.")     # 用例指定的原话
+            lines.append("No mismatch detected.")     # exact wording required by the use case
         for r in self.results:
             if r.outcome is Outcome.MISMATCH:
                 lines.append(
@@ -204,11 +204,11 @@ def compare_documents(
     review_threshold: float = 0.62,
 ) -> ComparisonReport:
     """
-    比对一封邮件所附的 SI 与 BL。
+    Compare the SI and BL attached to one email.
 
-    si / bl：{field_key: value} —— 由抽取层（LLM/OCR）产出并经 schema 校验
-    review_threshold：低于此置信度即转人工。默认值来自成本敏感阈值扫描
-                      （见 evaluate.optimal_threshold），不是拍脑袋定的。
+    si / bl: {field_key: value} - produced by the extraction layer (LLM/OCR) and schema-validated
+    review_threshold: below this confidence the case goes to a human. The default comes from the
+                      cost-sensitive threshold sweep (see evaluate.optimal_threshold), not a guess.
     """
     si_conf, bl_conf = si_conf or {}, bl_conf or {}
     results = [

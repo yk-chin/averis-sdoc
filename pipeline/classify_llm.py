@@ -1,21 +1,21 @@
 """
-LLM 兜底分类器 —— 只在规则置信度不够时被调用
-==============================================
-- provider 由 LLM_PROVIDER 控制：aistudio（API key，开发用免费额度）| vertex（GCP 项目 + ADC，交付用）
-- 结构化输出：response_schema = pydantic 模型，SDK 侧 + 本地各校验一次
-- 10 秒超时（API 最小允许值）、1 次重试；任何失败都返回 None，由调用方退回规则结果
-- 绝不向主流程抛异常
-- 模型降级链：GEMINI_MODEL 可写逗号分隔的优先级列表；404 剔除、429/503 冷却 60s 自动切换
-- 结果按 (prompt 版本, subject, body) 哈希缓存到 .cache/，重复跑 eval 不重复计费；
-  改 prompt / few-shot / schema 会自动让旧缓存失效
+LLM fallback classifier - called only when the rule confidence is too low
+=========================================================================
+- provider selected by LLM_PROVIDER: aistudio (API key, free tier for development) | vertex (GCP project + ADC, for delivery)
+- structured output: response_schema = pydantic model, validated by the SDK and again locally
+- 10 s timeout (the API minimum), 1 retry; any failure returns None and the caller keeps the rule result
+- never raises into the main pipeline
+- model fallback chain: GEMINI_MODEL may be a comma-separated priority list; 404 drops a model, 429/503 cools it for 60 s and switches
+- results cached in .cache/ by hash of (prompt version, subject, body), so repeated evals are free;
+  changing the prompt / few-shot / schema invalidates the old cache automatically
 
-环境变量（可放 .env，见 .env.example）：
-  LLM_PROVIDER      aistudio | vertex          未设置 → LLM 关闭，全部走规则
-  GEMINI_API_KEY    aistudio 必填
-  GEMINI_MODEL      默认 gemini-3.6-flash,gemini-3.5-flash,gemini-3.5-flash-lite
-  GCP_PROJECT       vertex 必填
-  GCP_LOCATION      vertex 可选，默认 us-central1
-  LLM_MIN_INTERVAL  两次调用最小间隔秒数，免费额度限流用，默认 0
+Environment (may live in .env, see .env.example):
+  LLM_PROVIDER      aistudio | vertex          unset -> LLM off, everything goes by rules
+  GEMINI_API_KEY    required for aistudio
+  GEMINI_MODEL      default gemini-3.6-flash,gemini-3.5-flash,gemini-3.5-flash-lite
+  GCP_PROJECT       required for vertex
+  GCP_LOCATION      optional for vertex, default us-central1
+  LLM_MIN_INTERVAL  minimum seconds between calls, for free-tier rate limits, default 0
 """
 from __future__ import annotations
 import hashlib, json, logging, os, pathlib, re, sys, threading, time
@@ -23,13 +23,13 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, ValidationError
 
-logging.getLogger("google_genai").setLevel(logging.ERROR)   # 静音 SDK 的 AFC 提示等无关 warning
+logging.getLogger("google_genai").setLevel(logging.ERROR)   # silence the SDK's AFC notice and other irrelevant warnings
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 CACHE_PATH = ROOT / ".cache" / "llm_classify.json"
-TIMEOUT_MS = 10_000                   # Gemini API 硬性下限 10s（8s 会被 400 拒绝："Minimum allowed deadline is 10s"）
-MAX_ATTEMPTS = 2                      # 1 次 + 1 次重试
-BODY_MAX_CHARS = 1_500                # SI 全文很长，签名/引用无信息量
+TIMEOUT_MS = 10_000                   # Gemini API hard minimum of 10 s (8 s is rejected with 400: "Minimum allowed deadline is 10s")
+MAX_ATTEMPTS = 2                      # 1 attempt + 1 retry
+BODY_MAX_CHARS = 1_500                # SI bodies are long; signatures / quoted mail carry no signal
 
 Category = Literal["BL_COMPARISON", "SI_REQUEST", "INVOICE_QUERY", "GENERAL", "SPAM"]
 
@@ -37,11 +37,11 @@ Category = Literal["BL_COMPARISON", "SI_REQUEST", "INVOICE_QUERY", "GENERAL", "S
 class Classification(BaseModel):
     category: Category
     confidence: float = Field(ge=0.0, le=1.0)
-    reason: str = Field(max_length=200, description="一句话，引用正文中的依据")
+    reason: str = Field(max_length=200, description="one sentence quoting the evidence in the body")
 
 
 # ----------------------------------------------------------------------------
-# .env 加载（不引入 python-dotenv；已存在的环境变量优先）
+# .env loading (no python-dotenv dependency; existing environment variables win)
 # ----------------------------------------------------------------------------
 def _load_dotenv() -> None:
     p = ROOT / ".env"
@@ -79,7 +79,7 @@ OUTPUT
 Return JSON matching the schema: category, confidence (0-1), reason (one short sentence quoting the body evidence).
 """
 
-# few-shot：五类各 2 条，均取自真实 inbox（正文已截短）
+# few-shot: 2 per class, all from the real inbox (bodies shortened)
 FEW_SHOT: list[tuple[str, str, str, list[str], str]] = [
     # (email_id, subject, body, attachments, gold)
     ("email_051",
@@ -114,12 +114,12 @@ FEW_SHOT: list[tuple[str, str, str, list[str], str]] = [
      "Dear All,\n\nPlease find attached the update summary for SOLID 16 V.044NW2. Loading completed, documents to follow.\n\nRegards,\nDocumentation Team",
      [], "GENERAL"),
     ("email_075",
-     "_Approval Required_ Time Off Request",          # ← 误导性标题
+     "_Approval Required_ Time Off Request",          # <- misleading subject
      "This is an automated notification. The India HSS SD Billing Process for MARCOPOLO 810 V.BS005 has completed successfully. No action required.\n\n-- RPA Bot",
      [], "GENERAL"),
 
     ("email_231",
-     "Dear Valued Customer, update your account to avoid suspension",   # ← 误导性标题
+     "Dear Valued Customer, update your account to avoid suspension",   # <- misleading subject
      "CONGRATULATIONS!!! Your email address has been selected in our monthly draw. Click here to claim your $1,000 gift card now: http://bit.ly/claim-prize-now",
      [], "SPAM"),
     ("email_226",
@@ -146,7 +146,7 @@ def _build_prompt(email: dict) -> str:
 
 
 # ----------------------------------------------------------------------------
-# 客户端（懒加载，单例）
+# client (lazy, singleton)
 # ----------------------------------------------------------------------------
 _client = None
 _client_err: Optional[str] = None
@@ -155,7 +155,7 @@ _warned = False
 
 
 def _get_client():
-    """返回 genai.Client 或 None（配置缺失 / 导入失败）。只初始化一次。"""
+    """Returns genai.Client or None (missing config / import failure). Initialised once."""
     global _client, _client_err
     if _client is not None or _client_err is not None:
         return _client
@@ -171,25 +171,25 @@ def _get_client():
             if provider == "aistudio":
                 key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
                 if not key:
-                    _client_err = "LLM_PROVIDER=aistudio 但未设置 GEMINI_API_KEY"
+                    _client_err = "LLM_PROVIDER=aistudio but GEMINI_API_KEY is not set"
                     return None
                 _client = genai.Client(api_key=key, http_options=http)
             elif provider == "vertex":
                 project = os.getenv("GCP_PROJECT")
                 if not project:
-                    _client_err = "LLM_PROVIDER=vertex 但未设置 GCP_PROJECT"
+                    _client_err = "LLM_PROVIDER=vertex but GCP_PROJECT is not set"
                     return None
                 _client = genai.Client(vertexai=True, project=project,
                                        location=os.getenv("GCP_LOCATION", "us-central1"),
                                        http_options=http)
             elif provider == "":
-                _client_err = "LLM_PROVIDER 未设置，LLM 兜底关闭"
+                _client_err = "LLM_PROVIDER not set, LLM fallback disabled"
                 return None
             else:
-                _client_err = f"未知 LLM_PROVIDER={provider!r}（应为 aistudio | vertex）"
+                _client_err = f"unknown LLM_PROVIDER={provider!r} (expected aistudio | vertex)"
                 return None
-        except Exception as e:                       # 导入失败、构造失败……都不抛
-            _client_err = f"LLM 客户端初始化失败: {type(e).__name__}: {e}"
+        except Exception as e:                       # import or construction failure - never raise
+            _client_err = f"LLM client initialisation failed: {type(e).__name__}: {e}"
             return None
     return _client
 
@@ -198,11 +198,11 @@ def _warn_once(msg: str) -> None:
     global _warned
     if not _warned:
         _warned = True
-        print(f"  [classify_llm] {msg} → 全部退回规则结果", file=sys.stderr)
+        print(f"  [classify_llm] {msg} -> falling back to rule results", file=sys.stderr)
 
 
 # ----------------------------------------------------------------------------
-# 缓存
+# cache
 # ----------------------------------------------------------------------------
 _cache: Optional[dict] = None
 
@@ -226,7 +226,7 @@ def _cache_save() -> None:
 
 
 def _prompt_version() -> str:
-    """prompt / few-shot / schema 任一改动 → 旧缓存自动失效。"""
+    """Any change to the prompt / few-shot / schema -> the old cache is invalidated automatically."""
     h = hashlib.sha1()
     h.update(SYSTEM_PROMPT.encode("utf-8"))
     h.update(json.dumps(FEW_SHOT, ensure_ascii=False).encode("utf-8"))
@@ -238,7 +238,7 @@ _PROMPT_VERSION = _prompt_version()
 
 
 def _cache_key(email: dict) -> str:
-    """按 prompt 版本 + 邮件内容缓存；模型链内切换视为等价，答复模型记录在值里供审计。"""
+    """Cache by prompt version + email content; switching within the model chain is treated as equivalent, the answering model is recorded in the value for audit."""
     h = hashlib.sha1()
     h.update(_PROMPT_VERSION.encode()); h.update(b"\0")
     h.update((email.get("subject") or "").encode("utf-8", "replace")); h.update(b"\0")
@@ -247,9 +247,9 @@ def _cache_key(email: dict) -> str:
 
 
 # ----------------------------------------------------------------------------
-# 模型降级链 + 熔断
-#   GEMINI_MODEL 可为逗号分隔的优先级列表；404（模型不存在/下线）→ 本次运行内剔除；
-#   429/503 等重试后仍失败 → 冷却 COOLDOWN_S 秒，期间自动切下一个模型
+# Model fallback chain + circuit breaker
+#   GEMINI_MODEL may be a comma-separated priority list; 404 (model missing / retired) -> dropped for this run;
+#   429/503 still failing after the retry -> cooled down for COOLDOWN_S seconds, next model used meanwhile
 # ----------------------------------------------------------------------------
 COOLDOWN_S = 60.0
 _dead_models: set[str] = set()
@@ -257,7 +257,7 @@ _cooldown_until: dict[str, float] = {}
 
 
 def _model_chain() -> list[str]:
-    """逗号或分号分隔（Cloud Run --set-env-vars 用逗号分隔键值对，值里用分号）。"""
+    """Comma- or semicolon-separated (Cloud Run --set-env-vars uses commas between pairs, so values use semicolons)."""
     raw = os.getenv("GEMINI_MODEL", "gemini-3.6-flash,gemini-3.5-flash,gemini-3.5-flash-lite")
     return [m.strip() for m in re.split(r"[,;]", raw) if m.strip()]
 
@@ -282,15 +282,15 @@ def _err_kind(e: Exception) -> str:
 
 
 # ----------------------------------------------------------------------------
-# 统计（run.py 结尾打印）
+# statistics (printed at the end of run.py)
 # ----------------------------------------------------------------------------
 STATS = {"calls": 0, "cache_hits": 0, "failures": 0, "retries": 0, "model_switches": 0}
-MODEL_USAGE: dict[str, int] = {}                     # 每个模型实际答复的次数
+MODEL_USAGE: dict[str, int] = {}                     # how many answers each model actually produced
 
 
 # ----------------------------------------------------------------------------
-# 限速：LLM_MIN_INTERVAL（秒）两次真实调用之间的最小间隔。免费额度按 RPM 限流时用。
-#   gemini-2.5-flash 免费档约 10 RPM → 6.5；flash-lite 约 15 RPM → 4.5；付费/Vertex → 0
+# Rate limiting: LLM_MIN_INTERVAL (seconds) between two real calls, for RPM-limited free tiers.
+#   gemini-2.5-flash free tier ~10 RPM -> 6.5; flash-lite ~15 RPM -> 4.5; paid / Vertex -> 0
 # ----------------------------------------------------------------------------
 _last_call_ts = 0.0
 
@@ -309,22 +309,22 @@ def _pace() -> None:
 
 
 # ----------------------------------------------------------------------------
-# 主入口
+# entry point
 # ----------------------------------------------------------------------------
 def classify_with_llm(email: dict) -> Optional[Classification]:
-    """成功 → Classification；任何失败 → None（调用方退回规则）。永不抛异常。"""
+    """Success -> Classification; any failure -> None (the caller falls back to rules). Never raises."""
     try:
         return _classify(email)
-    except Exception as e:                           # 最后一道保险
+    except Exception as e:                           # last line of defence
         STATS["failures"] += 1
-        _warn_once(f"未预期异常 {type(e).__name__}: {e}")
+        _warn_once(f"unexpected exception {type(e).__name__}: {e}")
         return None
 
 
 def _classify(email: dict) -> Optional[Classification]:
     client = _get_client()
     if client is None:
-        _warn_once(_client_err or "LLM 不可用")
+        _warn_once(_client_err or "LLM unavailable")
         return None
 
     cache = _cache_load()
@@ -334,7 +334,7 @@ def _classify(email: dict) -> Optional[Classification]:
             STATS["cache_hits"] += 1
             return Classification.model_validate(cache[key]["result"])
         except (ValidationError, KeyError, TypeError):
-            pass                                     # 缓存坏了就重新调
+            pass                                     # corrupt cache entry -> call again
 
     from google.genai import types
     prompt = _build_prompt(email)
@@ -345,7 +345,7 @@ def _classify(email: dict) -> Optional[Classification]:
                   response_schema=Classification,
                   temperature=0.0,
                   max_output_tokens=256)
-        if model.startswith("gemini-2.5-flash"):    # 2.5 系用 thinking_budget；分类不需要思考
+        if model.startswith("gemini-2.5-flash"):    # 2.5 series takes thinking_budget; classification needs no thinking
             kw["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
         return types.GenerateContentConfig(**kw)
 
@@ -362,7 +362,7 @@ def _classify(email: dict) -> Optional[Classification]:
                 resp = client.models.generate_content(model=model, contents=prompt,
                                                       config=_config(model))
                 parsed = resp.parsed
-                if parsed is None:                   # SDK 没解析出来就自己解析
+                if parsed is None:                   # if the SDK did not parse it, parse it ourselves
                     parsed = Classification.model_validate_json(resp.text or "")
                 elif not isinstance(parsed, Classification):
                     parsed = Classification.model_validate(parsed)
@@ -373,18 +373,18 @@ def _classify(email: dict) -> Optional[Classification]:
             except Exception as e:
                 last_err = e
                 kind = _err_kind(e)
-                if kind == "gone":                   # 模型不存在：不重试，直接剔除
+                if kind == "gone":                   # model missing: no retry, drop it
                     _dead_models.add(model)
                     break
                 if attempt < MAX_ATTEMPTS:
                     STATS["retries"] += 1
                     time.sleep(6.0 if kind == "quota" else 1.0)
-                else:                                # 重试后仍失败：冷却，切下一个模型
+                else:                                # still failing after the retry: cool down, switch to the next model
                     _cooldown_until[model] = time.time() + COOLDOWN_S
 
     STATS["failures"] += 1
-    if STATS["failures"] <= 3:                       # 只打前几条，避免刷屏
-        print(f"  [classify_llm] {email.get('email_id')} 调用失败（已尝试 {tried or '无可用模型'}），"
-              f"退回规则：{type(last_err).__name__ if last_err else '-'}: "
-              f"{str(last_err)[:160] if last_err else '模型链为空或全部冷却中'}", file=sys.stderr)
+    if STATS["failures"] <= 3:                       # print only the first few, avoid flooding
+        print(f"  [classify_llm] {email.get('email_id')} call failed (tried {tried or 'no model available'}), "
+              f"falling back to rules: {type(last_err).__name__ if last_err else '-'}: "
+              f"{str(last_err)[:160] if last_err else 'model chain empty or all cooling down'}", file=sys.stderr)
     return None

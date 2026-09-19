@@ -1,52 +1,52 @@
-# 扰动测试报告（Perturbation Report）
+# Perturbation Report
 
-> 目的：回答「v2 数据集上的 1.0 是泛化还是拟合」。
-> 方法：在**不改变语义**的前提下扰动数据集副本，重跑 pipeline，用主办方 `/submit` 打分。
-> 脚本：`scripts_perturb.py`（副本在 `.cache/perturb/`，原始 `data/` 只读，不读 ground_truth，不写 `history.jsonl`）。
-> 日期：2026-09-19 · 代码：加固前 `65d498b` → 加固后 `88d7eed`（tag `day1-hardened`）
+> Purpose: answer "is the 1.0 on the v2 dataset generalisation or fitting?"
+> Method: perturb a **copy** of the dataset without changing its meaning, re-run the pipeline, score through the organiser's `/submit`.
+> Script: `scripts_perturb.py` (copies under `.cache/perturb/`, original `data/` read-only, ground_truth never read, `history.jsonl` not written).
+> Date: 2026-09-19 · Code: before hardening `65d498b` -> after hardening `88d7eed` (tag `day1-hardened`)
 
-## 扰动项
+## Perturbations
 
-| 项 | 扰动内容 | 为什么算"语义不变" |
+| # | What is perturbed | Why it is "semantics-preserving" |
 |---|---|---|
-| P1 | 字段标签换同义写法，SI/BL 各用不同别名（Port of Loading → Load Port → POL …），每封轮换 | 同一字段的行业常用标签 |
-| P2 | 公司后缀写法：SI 用变体 A（`Co Ltd` / `Pte Ltd` / `Sdn. Bhd.` / `L.L.C.`），BL 用变体 B（`Company Limited` / `Pte. Limited` / `Sendirian Berhad`） | 同一法人 |
-| P3 | 重量单位：SI 换算成 MT（2 位小数），BL 换算成 LBS（1 位小数） | 数值等价，误差 < 0.1% 容差 |
-| P4a | 港口：SI 去掉 UN/LOCODE 只留名字，BL 不动 | 名字即港口 |
-| P4b | 港口：BL 只留 UN/LOCODE（如 `KEMBA`）——仅对名字与代码在真实 LOCODE 表里一致的值 | 代码即港口；主办方埋的"改名留码"缺陷值不动，避免抹掉缺陷 |
-| P5 | 附件文件名去掉 `_SI` / `_BL` 标记（`email_001_SI.txt` → `email_001_doc_a.txt`），inbox 引用同步改 | 文件内容不变 |
+| P1 | Field labels replaced by synonyms, a different alias on SI and BL (Port of Loading -> Load Port -> POL ...), rotated per email | Industry-standard labels for the same field |
+| P2 | Company-suffix spelling: variant A on SI (`Co Ltd` / `Pte Ltd` / `Sdn. Bhd.` / `L.L.C.`), variant B on BL (`Company Limited` / `Pte. Limited` / `Sendirian Berhad`) | Same legal entity |
+| P3 | Weight units: SI converted to MT (2 decimals), BL to LBS (1 decimal) | Numerically equivalent, error < 0.1 % tolerance |
+| P4a | Ports: SI keeps the name only (UN/LOCODE removed), BL untouched | The name is the port |
+| P4b | Ports: BL keeps the UN/LOCODE only (e.g. `KEMBA`) - only for values whose name and code agree in the real LOCODE table | The code is the port; the organiser's "name changed, code kept" defects are left alone so no defect is erased |
+| P5 | Attachment filenames lose their `_SI` / `_BL` tags (`email_001_SI.txt` -> `email_001_doc_a.txt`), inbox references updated | File contents unchanged |
 
-覆盖率：P1–P4 修改 txt / xlsx / docx 附件（222/250），**PDF 附件（28 个）未扰动**；P4 只影响 txt，因为 xlsx/docx 里的港口值本来不带代码。P5 覆盖全部 250 个附件。
+Coverage: P1-P4 modify txt / xlsx / docx attachments (222/250); **PDF attachments (28) are not perturbed**; P4 only touches txt because port values in xlsx/docx carry no code. P5 covers all 250 attachments.
 
-## 结果：加固前 vs 加固后
+## Results: before vs after hardening
 
-| 扰动 | 加固前 final | 加固后 final | 加固前明细 | 加固后明细 |
+| Perturbation | final before | final after | Detail before | Detail after |
 |---|---|---|---|---|
-| baseline（未扰动） | 1.0000 | 1.0000 | 四轴 1.0 | 四轴 1.0 |
-| P1 字段标签同义轮换 | 1.0000 | 1.0000 | — | — |
-| P2 公司后缀写法 | 1.0000 | 1.0000 | — | — |
-| P3 重量单位 MT / LBS | 1.0000 | 1.0000 | — | — |
-| P4a 港口 SI 只留名字 | 1.0000 | 1.0000 | — | — |
-| **P4b 港口 BL 只留 LOCODE** | **0.6805** | **1.0000** | defect_f1 0.653 · end_to_end 0.500 | 四轴 1.0 |
-| **P5 附件名去掉 `_SI`/`_BL`** | **0.3000** | **1.0000** | defect_f1 0.000 · end_to_end 0.000 · esc_P 0.155 | 四轴 1.0 |
+| baseline (unperturbed) | 1.0000 | 1.0000 | all four axes 1.0 | all four axes 1.0 |
+| P1 field-label synonyms | 1.0000 | 1.0000 | - | - |
+| P2 company-suffix spelling | 1.0000 | 1.0000 | - | - |
+| P3 weight units MT / LBS | 1.0000 | 1.0000 | - | - |
+| P4a ports, SI name only | 1.0000 | 1.0000 | - | - |
+| **P4b ports, BL LOCODE only** | **0.6805** | **1.0000** | defect_f1 0.653 · end_to_end 0.500 | all four axes 1.0 |
+| **P5 attachment names without `_SI`/`_BL`** | **0.3000** | **1.0000** | defect_f1 0.000 · end_to_end 0.000 · esc_P 0.155 | all four axes 1.0 |
 
-（四轴 = stage1_macro_f1 / defect_f1 / end_to_end / esc_precision）
+(four axes = stage1_macro_f1 / defect_f1 / end_to_end / esc_precision)
 
-## 两个被实锤的脆弱点与修法
+## The two confirmed weak points and their fixes
 
-**P5 → R2 附件识别只看文件名。** 文件名一变，`has_si / has_bl` 全 False，109 封比对一封都没做，end_to_end 归零、129 封被错误上报。
-修法（`pipeline/run.py` `classify_attachments()`）：文件名标记 > 内容指纹 `detect_doc_type()` > 都失败留 unassigned，槽位缺失时上报 NEEDS_REVIEW（读不出 → `unreadable`，读得出但非 SI/BL → `wrong_doc_type`）。
+**P5 -> R2 attachment routing by filename only.** Once the filenames change, `has_si / has_bl` are all False, none of the 109 comparisons happen, end-to-end goes to zero and 129 emails are wrongly escalated.
+Fix (`pipeline/run.py` `classify_attachments()`): filename tag > content fingerprint `detect_doc_type()` > both fail -> unassigned; a missing slot is escalated as NEEDS_REVIEW (`unreadable` if the file could not be read, `wrong_doc_type` if it could but is not SI/BL).
 
-**P4b → R4 UN/LOCODE 表只有 22 条。** BL 写纯代码 `KEMBA` 时，不在表里的代码被当成港名，与 SI 的 `MOMBASA` 不等 → 误报；46 封缺陷邮件里 23 封字段集因此不精确。
-修法（`shipdoc_core/normalize.py` `_LOCODE_NAME`）：+23 条真实 UN/LOCODE。**只补确认为真实行业数据的条目，不从数据集反推**——数据集里 `AUFRE→BUSAN`、`KEMBA→TUTICORIN` 这类映射本身就是主办方埋的缺陷；`IDBUA`（Buatan）无法确认为官方代码，未收录。
+**P4b -> R4 a UN/LOCODE table of only 22 entries.** When a BL writes the bare code `KEMBA`, an unknown code is treated as a port name and differs from the SI's `MOMBASA` -> false alarm; 23 of the 46 defect emails got an inexact field set.
+Fix (`shipdoc_core/normalize.py` `_LOCODE_NAME`): +23 real UN/LOCODEs. **Only entries confirmed as genuine industry data, never reverse-engineered from the dataset** - mappings like `AUFRE->BUSAN`, `KEMBA->TUTICORIN` in the data are the organiser's planted defects; `IDBUA` (Buatan) could not be confirmed as an official code and was left out.
 
-两处修法各配回归测试（共 55 个测试全绿），正常 eval 四轴保持 1.0。
+Each fix carries regression tests (55 tests in total, all green); the normal eval stays at 1.0 on all four axes.
 
-## 结论
+## Conclusion
 
-- 字段别名解析、公司名归一、重量单位换算、港名匹配在扰动下**全部站住**——这部分是真泛化。
-- 附件命名与 LOCODE 表是**结构性假设**，v2 数据从未触发，只有扰动测试能暴露；现已修复并由 P5 / P4b 守住。
-- 未覆盖：PDF 附件内容扰动（28 个）；标签值换行布局（R6）；PDF 字符交错伪影的其它标签（R5）。见 `docs/FINAL_ROUND_RISKS.md`。
+- Alias resolution, company-name normalisation, weight-unit conversion and port-name matching **all hold** under perturbation - this part is genuine generalisation.
+- Attachment naming and the LOCODE table were **structural assumptions** that the v2 data never triggered; only a perturbation test could expose them. Both are fixed and now guarded by P5 / P4b.
+- Not covered: content perturbation of PDF attachments (28); label-value-on-next-line layout (R6); PDF interleave artefacts on other labels (R5). See `docs/FINAL_ROUND_RISKS.md`.
 
 ---
 

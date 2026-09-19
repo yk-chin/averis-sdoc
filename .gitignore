@@ -1,7 +1,7 @@
-# 主办方数据集 —— 绝不提交（inbox / attachments / ground_truth）
+# organiser's dataset - never committed (inbox / attachments / ground_truth)
 data/
 
-# pipeline 输出
+# pipeline output
 submission*.json
 
 # Python
@@ -9,12 +9,12 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
-# 密钥与本机配置
+# secrets and machine-local config
 .env
 .claude/settings.local.json
 
-# LLM 调用缓存
+# LLM call cache
 .cache/
 
-# eval 图表
+# eval charts
 evals/*.png

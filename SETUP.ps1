@@ -1,13 +1,13 @@
-# Averis 流水线一键安装 (Windows PowerShell)
-# 用法：在本文件夹右键「在终端中打开」，然后跑  .\SETUP.ps1
+# One-shot setup for the Averis pipeline (Windows PowerShell)
+# Usage: right-click this folder > "Open in Terminal", then run  .\SETUP.ps1
 $ErrorActionPreference = "Stop"
-Write-Host "> 安装依赖..." -ForegroundColor Cyan
+Write-Host "> Installing dependencies..." -ForegroundColor Cyan
 python -m pip install --upgrade pip
 python -m pip install openpyxl python-docx pdfplumber pytest google-genai pydantic
-Write-Host "> 跑单元测试..." -ForegroundColor Cyan
+Write-Host "> Running unit tests..." -ForegroundColor Cyan
 python -m pytest tests/ -q
 Write-Host ""
-Write-Host "完成。接下来：" -ForegroundColor Green
-Write-Host "  1) 把主办方的 bundle 解压到  .\data\"
+Write-Host "Done. Next:" -ForegroundColor Green
+Write-Host "  1) Unzip the organiser's bundle into  .\data\"
 Write-Host "  2) python pipeline\run.py .\data submission.json"
-Write-Host "  3) 打分： python scripts_eval.py .\data --score-cli <路径>\score_cli.py --gt <路径>\ground_truth.json"
+Write-Host "  3) Score: python scripts_eval.py .\data --score-cli <path>\score_cli.py --gt <path>\ground_truth.json"

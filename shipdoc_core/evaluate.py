@@ -1,16 +1,16 @@
 """
-评估与校准 (Evaluation & Calibration)
-=====================================
-对应 rubric：Technical Feasibility & Validation 15 分
-          —— "Critical assumptions are validated with clear evidence"
+Evaluation & Calibration
+========================
+Rubric: Technical Feasibility & Validation, 15 points
+        - "Critical assumptions are validated with clear evidence"
 
-主办方提供了 self-evaluation 端点。绝大多数队会把它当玩具跑两次；
-我们把它当 KPI 仪表盘：每次改动都跑，记录版本、分数、回归。
+The organiser provides a self-evaluation endpoint. Most teams will run it twice as a toy;
+we treat it as a KPI dashboard: run after every change, record version, score, regressions.
 
-本文件还实现了别的队不会做的两件事：
-  1. 置信度校准 —— 系统说 0.8 时，它真的有 80% 正确吗？(ECE + reliability diagram)
-  2. 成本敏感阈值优化 —— 漏报一个真实差异的代价 ≠ 误报的代价。
-     阈值应当是解出来的，不是拍脑袋定的。
+This file also does two things other teams will not:
+  1. Confidence calibration - when the system says 0.8, is it right 80 % of the time? (ECE + reliability diagram)
+  2. Cost-sensitive threshold optimisation - missing a real difference costs more than a false alarm.
+     The threshold should be solved for, not guessed.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass, asdict
 
 
-# ----------------------------------------------------------- 分类指标
+# ----------------------------------------------------------- classification metrics
 
 @dataclass
 class PRF:
@@ -41,7 +41,7 @@ def prf(tp: int, fp: int, fn: int) -> PRF:
 
 
 def classification_report(y_true: list[str], y_pred: list[str]) -> dict:
-    """邮件分类的 per-class PRF + macro F1 + accuracy。"""
+    """Per-class PRF + macro F1 + accuracy for email classification."""
     labels = sorted(set(y_true) | set(y_pred))
     per: dict[str, PRF] = {}
     for lab in labels:
@@ -68,8 +68,8 @@ def _confusion(y_true, y_pred, labels) -> dict:
 
 def field_level_prf(gold: dict[str, set[str]], pred: dict[str, set[str]]) -> PRF:
     """
-    字段级差异检出 PRF —— 比邮件级严格得多，也更能暴露问题。
-    gold / pred：{email_id: {有差异的字段名}}
+    Field-level defect PRF - much stricter than email level, and exposes more problems.
+    gold / pred: {email_id: {names of differing fields}}
     """
     tp = fp = fn = 0
     for eid in set(gold) | set(pred):
@@ -80,7 +80,7 @@ def field_level_prf(gold: dict[str, set[str]], pred: dict[str, set[str]]) -> PRF
     return prf(tp, fp, fn)
 
 
-# ----------------------------------------------------------- 校准
+# ----------------------------------------------------------- calibration
 
 @dataclass
 class CalibrationBin:
@@ -93,9 +93,9 @@ class CalibrationBin:
 
 def calibration(confidences: list[float], correct: list[bool], bins: int = 10):
     """
-    可靠性分箱 + Expected Calibration Error。
-    ECE 越接近 0，说明置信度越"诚实"。
-    这张图放进 slides，就是 Technical Feasibility 那 15 分的直接证据。
+    Reliability bins + Expected Calibration Error.
+    The closer ECE is to 0, the more "honest" the confidences are.
+    This diagram in the slides is direct evidence for the 15 Technical Feasibility points.
     """
     if not confidences:
         return [], 0.0
@@ -117,15 +117,15 @@ def calibration(confidences: list[float], correct: list[bool], bins: int = 10):
     return out, round(ece, 4)
 
 
-# ----------------------------------------------------------- 阈值优化
+# ----------------------------------------------------------- threshold optimisation
 
 @dataclass
 class ThresholdPoint:
     threshold: float
     auto_n: int
     review_n: int
-    false_alarms: int      # 自动放行里的误报
-    missed: int            # 自动放行里的漏报
+    false_alarms: int      # false alarms among auto-passed cases
+    missed: int            # missed defects among auto-passed cases
     review_rate: float
     expected_cost: float
 
@@ -135,19 +135,19 @@ def optimal_threshold(
     correct: list[bool],
     is_flagged: list[bool],
     *,
-    cost_missed: float = 8.0,      # 漏掉真实差异：改单、延误、清关问题
-    cost_false_alarm: float = 1.0, # 误报：操作员白看一眼
-    cost_review: float = 0.35,     # 转人工：一次复核的人工成本
+    cost_missed: float = 8.0,      # a missed real difference: amendment, delay, customs trouble
+    cost_false_alarm: float = 1.0, # a false alarm: an operator looks for nothing
+    cost_review: float = 0.35,     # escalation: the labour cost of one review
     grid: int = 41,
 ):
     """
-    成本敏感阈值扫描。
+    Cost-sensitive threshold sweep.
 
-    低于阈值的 case 转人工（付 cost_review，不再产生错误成本）；
-    高于阈值的自动放行，错了就付 cost_missed 或 cost_false_alarm。
+    Cases below the threshold go to a human (pay cost_review, no further error cost);
+    cases above are auto-passed and, when wrong, pay cost_missed or cost_false_alarm.
 
-    返回 (最优点, 完整扫描曲线)。曲线画进 slides，
-    Q&A 被问"阈值怎么定的"时直接指着它回答。
+    Returns (best point, full sweep curve). The curve goes into the slides:
+    when the Q&A asks "how did you set the threshold", point at it.
     """
     pts: list[ThresholdPoint] = []
     n = len(confidences)

@@ -1,19 +1,20 @@
 """
-字段本体 (Field Ontology)
-=========================
-用例痛点三原文：「One document may say "Port of Loading" while the other says
-"Load Port." The system needs to recognize that these refer to the same field.」
+Field Ontology
+==============
+Pain point #3 from the use case: "One document may say 'Port of Loading' while the other says
+'Load Port.' The system needs to recognize that these refer to the same field."
 
-这个文件就是那个"recognize"。它是确定性的、可审计的、可单测的——
-不是让 LLM 每次自己猜哪两个标签是同一个意思。
+This file is that "recognize". It is deterministic, auditable and unit-testable -
+not an LLM guessing each time which two labels mean the same thing.
 
-⚠️ 领域陷阱（这是我们比其他队多知道的东西）：
-   Place of Receipt  ≠  Port of Loading
-   Place of Delivery ≠  Port of Discharge
-   前者是内陆收/交货点，后者是船舶实际靠泊港。
-   天真的别名表会把它们混为一谈，制造假警报 —— 而用例明确要求
-   "without creating false alarms"。所以它们被放进 NEAR_MISS_LABELS，
-   命中时不当作该字段，而是记一条"疑似标签混淆"的证据交人工。
+Domain trap (something we know that other teams may not):
+   Place of Receipt  !=  Port of Loading
+   Place of Delivery !=  Port of Discharge
+   The former are inland receipt/delivery points; the latter are the ports the vessel
+   actually calls at. A naive alias table merges them and creates false alarms - and the
+   use case explicitly demands "without creating false alarms". So they live in
+   NEAR_MISS_LABELS: when hit they are NOT taken as the field; instead a
+   "suspected label confusion" note is recorded for a human.
 """
 
 from __future__ import annotations
@@ -24,14 +25,14 @@ from enum import Enum
 
 
 class FieldKind(str, Enum):
-    PARTY = "party"          # 公司名 + 地址，文本型
-    PORT = "port"            # 港口名，可能带 UN/LOCODE
-    COUNT = "count"          # 整数
-    WEIGHT_KG = "weight_kg"  # 浮点，单位需换算
+    PARTY = "party"          # company name + address, text
+    PORT = "port"            # port name, possibly with UN/LOCODE
+    COUNT = "count"          # integer
+    WEIGHT_KG = "weight_kg"  # float, unit conversion required
 
 
 class Severity(str, Enum):
-    HIGH = "high"       # 直接影响清关 / 交付 / 计费
+    HIGH = "high"       # directly affects customs clearance / delivery / billing
     MEDIUM = "medium"
 
 
@@ -45,7 +46,7 @@ class FieldSpec:
     near_miss_labels: tuple[str, ...] = field(default=())
 
 
-# 用例指定的七个字段，一个不多一个不少
+# The seven fields named by the use case - no more, no fewer
 FIELDS: tuple[FieldSpec, ...] = (
     FieldSpec(
         key="shipper",
@@ -130,7 +131,7 @@ FIELDS: tuple[FieldSpec, ...] = (
             "gross weight in kg", "total weight",
             "gross wt (kgs)", "gross wt kgs", "gross weight (kg)",
         ),
-        # ⚠️ NET WEIGHT 绝不是 GROSS WEIGHT —— 数据里两者同时出现，混淆即假警报
+        # NET WEIGHT is never GROSS WEIGHT - both appear in the data; confusing them is a false alarm
         near_miss_labels=("net weight", "net wt", "nett weight", "n.w."),
     ),
 )
@@ -144,8 +145,8 @@ def _is_cjk(ch: str) -> bool:
 
 
 def _norm_label(s: str) -> str:
-    """标签归一。⚠️ 真实数据里标签混排中文（"Gross Weight毛重(KGS)"），
-    而 CJK 在 Python 里 isalnum() 为 True，不显式剔除就会匹配失败。"""
+    """Label normalisation. Real data mixes Chinese into labels ("Gross Weight毛重(KGS)"),
+    and CJK characters are isalnum() == True in Python, so without explicit removal the match fails."""
     return " ".join(
         "".join(
             ch if (ch.isalnum() or ch.isspace()) and not _is_cjk(ch) else " "
@@ -163,20 +164,20 @@ for _f in FIELDS:
         _NEAR_MISS_INDEX[_norm_label(_n)] = _f.key
 
 
-# 出现在字段标签前的限定词，本身不改变字段含义
+# Qualifiers that precede a field label without changing its meaning
 _LEADING_QUALIFIERS = ("total", "grand total", "sub total", "subtotal",
                        "said to contain", "shipper declared", "declared")
 
 
 def resolve_label(raw_label: str) -> tuple[str | None, bool]:
     """
-    把文档里出现的任意标签映射到七个规范字段之一。
+    Map any label found in a document to one of the seven canonical fields.
 
-    返回 (field_key, is_near_miss)
-      - ("port_of_loading", False)  精确别名命中
-      - ("port_of_loading", True)   命中近义陷阱标签（Place of Receipt），
-                                     不可当作该字段使用，应交人工确认
-      - (None, False)               无法识别
+    Returns (field_key, is_near_miss)
+      - ("port_of_loading", False)  exact alias hit
+      - ("port_of_loading", True)   near-miss trap label (Place of Receipt):
+                                     must not be used as the field; hand to a human
+      - (None, False)               unrecognised
     """
     n = _norm_label(raw_label)
     if n in _ALIAS_INDEX:
@@ -184,8 +185,8 @@ def resolve_label(raw_label: str) -> tuple[str | None, bool]:
     if n in _NEAR_MISS_INDEX:
         return _NEAR_MISS_INDEX[n], True
 
-    # 退化 1：剥离前置限定词。真实 PDF 里是 "TOTAL Gross Wt (kgs):"，
-    #         逐个补别名会补不完，剥离限定词更通用。
+    # Fallback 1: strip leading qualifiers. Real PDFs say "TOTAL Gross Wt (kgs):";
+    #             adding aliases one by one never ends, stripping qualifiers is more general.
     for q in _LEADING_QUALIFIERS:
         if n.startswith(q + " "):
             rest = n[len(q) + 1:].strip()
@@ -196,17 +197,17 @@ def resolve_label(raw_label: str) -> tuple[str | None, bool]:
             n = rest
             break
 
-    # 退化 2：去掉括号补充说明后再试一次
+    # Fallback 2: drop the parenthesised remark and try again
     stripped = n.split("(")[0].strip()
     if stripped and stripped in _ALIAS_INDEX:
         return _ALIAS_INDEX[stripped], False
     if stripped and stripped in _NEAR_MISS_INDEX:
         return _NEAR_MISS_INDEX[stripped], True
 
-    # 退化 3：模糊兜底。PDF 抽取会把 CJK 抽成乱码
-    #         （"Gross Weight毛重(KGS)" → "Gross Weightnn(KGS)"），
-    #         逐个补别名补不完。阈值取 0.86，低于它宁可返回 None 交人工，
-    #         绝不猜 —— 尤其不能把 NET WEIGHT 错配成 GROSS WEIGHT。
+    # Fallback 3: fuzzy match. PDF extraction turns CJK into garbage
+    #             ("Gross Weight毛重(KGS)" -> "Gross Weightnn(KGS)"), which no alias list can cover.
+    #             Threshold 0.86; below it return None and hand to a human rather than guess -
+    #             above all never map NET WEIGHT onto GROSS WEIGHT.
     return _fuzzy_resolve(n)
 
 

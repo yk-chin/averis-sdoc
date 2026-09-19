@@ -1,13 +1,13 @@
 """
-Office / PDF 附件解析
-=====================
-三种真实形态，各有陷阱：
-  XLSX  两列键值表
-  DOCX  表格，标签带中文括注 —— "Shipper (Principal or Seller) (发货人)"
-  PDF   标签与值同行但**没有冒号** —— "Shipper APRIL FINE PAPER TRADING"，地址续行
+Office / PDF attachment parsing
+===============================
+Three real shapes, each with a trap:
+  XLSX  two-column key/value sheet
+  DOCX  a table whose labels carry Chinese annotations - "Shipper (Principal or Seller) (发货人)"
+  PDF   label and value on one line but **no colon** - "Shipper APRIL FINE PAPER TRADING", address continuation lines
 
-策略：全部先归一成 "Label: Value" 文本，再复用同一套 resolve_label / 解析逻辑。
-这样只有一条字段解析路径，只需维护一张别名表。
+Strategy: normalise everything to "Label: Value" text first, then reuse the single
+resolve_label / parsing path. One field-parsing path, one alias table to maintain.
 """
 from __future__ import annotations
 import re, warnings, pathlib
@@ -15,10 +15,10 @@ warnings.filterwarnings("ignore")
 
 from shipdoc_core.fields import FIELDS
 
-# 去掉 CJK 括注："Shipper (Principal or Seller) (发货人)" → "Shipper (Principal or Seller)"
+# Strip CJK annotations: "Shipper (Principal or Seller) (发货人)" -> "Shipper (Principal or Seller)"
 CJK_PAREN = re.compile(r"[（(]\s*[\u4e00-\u9fff][^)）]*[)）]")
 
-# PDF 无冒号：按已知标签做行首前缀匹配。长标签优先，避免 "Shipper" 抢走 "Shipper/Exporter"
+# PDF has no colon: prefix-match known labels at line start. Longest first, so "Shipper" does not steal "Shipper/Exporter"
 _ALL_LABELS: list[str] = sorted(
     {a for f in FIELDS for a in f.aliases} | {n for f in FIELDS for n in f.near_miss_labels},
     key=len, reverse=True,
@@ -33,7 +33,7 @@ CJK_ANY = re.compile(r"[\u3000-\u9fff\uff00-\uffef]+")
 
 
 def _clean_label(s: str) -> str:
-    """先去 CJK 括注，再去内联 CJK。真实数据两种都有。"""
+    """Strip CJK annotations first, then inline CJK. The real data has both."""
     s = CJK_PAREN.sub("", str(s))
     s = CJK_ANY.sub("", s)
     return re.sub(r"\s+", " ", s).strip().rstrip(":").strip()
@@ -61,7 +61,7 @@ def docx_to_kv_text(path) -> str:
         for row in t.rows:
             cells = [c.text.strip() for c in row.cells if c.text.strip()]
             if len(cells) >= 2:
-                # 单元格内换行是地址续行，取第一行作为主体
+                # line breaks inside a cell are address continuation; the first line is the entity
                 value = cells[1].splitlines()[0].strip()
                 lines.append(f"{_clean_label(cells[0])}: {value}")
             elif len(cells) == 1:
@@ -80,12 +80,12 @@ def pdf_to_kv_text(path) -> str:
                 if m:
                     out.append(f"{_clean_label(m.group(1))}: {m.group(2).strip()}")
                 else:
-                    out.append(line)        # 保留原行，供文档类型指纹识别
+                    out.append(line)        # keep the raw line for document-type fingerprinting
     return "\n".join(out)
 
 
 def office_to_text(path) -> str | None:
-    """把 pdf/docx/xlsx 转成 'Label: Value' 文本。失败返回 None → 上报 unreadable。"""
+    """Convert pdf/docx/xlsx to 'Label: Value' text. Returns None on failure -> reported as unreadable."""
     p = pathlib.Path(path)
     try:
         ext = p.suffix.lower()
@@ -95,7 +95,7 @@ def office_to_text(path) -> str | None:
             return docx_to_kv_text(p)
         if ext == ".pdf":
             txt = pdf_to_kv_text(p)
-            # 纯图扫描件：pdfplumber 抽不出文字 → 真正的 unreadable，交 OCR/Vision
+            # image-only scan: pdfplumber extracts no text -> genuinely unreadable, hand to OCR/Vision
             return txt if txt and len(txt.strip()) > 40 else None
         return None
     except Exception:

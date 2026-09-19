@@ -1,47 +1,48 @@
 """
-置信度校准 + 成本敏感阈值扫描 + 分数进度
-==========================================
-用法：  python scripts_calibration.py
-产出：  evals/calibration.png   reliability diagram + ECE
-        evals/threshold.png     阈值-期望成本曲线（含最优阈值）
-        evals/progress.png      evals/history.jsonl 的分数折线
-        evals/calibration.json  原始数字，供 slides / Q&A 引用
+Confidence calibration + cost-sensitive threshold sweep + score progress
+=======================================================================
+Usage:   python scripts_calibration.py
+Output:  evals/calibration.png   reliability diagram + ECE
+         evals/threshold.png     threshold vs expected-cost curve (with the optimum)
+         evals/progress.png      score line chart from evals/history.jsonl
+         evals/calibration.json  raw numbers for slides / Q&A
 
-"正确与否"的真值来源
---------------------
-打分服务是黑盒，拿不到逐邮件 gold。但当前 submission.json 在四轴上全部 1.0，
-即它在所有被打分字段上与 gold 一致 → 用它作为参考答案。
-为了让校准/阈值曲线有真正的权衡可看，脚本同时跑**修复前**的比对核心
-（BASELINE_COMMIT，用 git worktree 隔离，那版有 12 处错误）与当前核心，两条曲线并排。
+Where "correct or not" comes from
+---------------------------------
+The scoring service is a black box: no per-email gold. But the current submission.json scores
+1.0 on all four axes, i.e. it agrees with gold on every scored field -> it serves as the reference.
+So that the calibration / threshold curves show a real trade-off, the script also runs the
+**pre-fix** comparison core (BASELINE_COMMIT, isolated in a git worktree, which had 12 errors)
+next to the current core, two curves side by side.
 """
 from __future__ import annotations
 import json, os, pathlib, subprocess, sys
 
 # ============================================================================
-# ⚠️ 成本参数目前是假设值。9/21 Workshop 2 向 Averis 求证真实比例后，改这三行即可。
+# The cost parameters are placeholders. Once Averis confirms real ratios at Workshop 2 (21 Sep), edit these three lines.
 # ============================================================================
-COST_MISSED      = 8.0    # 漏掉一个真实差异：改单、延误、清关问题
-COST_FALSE_ALARM = 1.0    # 误报：操作员白看一眼
-COST_REVIEW      = 0.35   # 转人工：一次复核的人工成本
+COST_MISSED      = 8.0    # a missed real difference: amendment, delay, customs trouble
+COST_FALSE_ALARM = 1.0    # a false alarm: an operator looks for nothing
+COST_REVIEW      = 0.35   # escalation: the labour cost of one review
 # ============================================================================
 
-BASELINE_COMMIT = "e7dd042"          # 修复前的比对核心（规则版基线）
+BASELINE_COMMIT = "e7dd042"          # the pre-fix comparison core (rules-only baseline)
 ROOT = pathlib.Path(__file__).resolve().parent
 DATA = ROOT / "data"
 EVALS = ROOT / "evals"
 
-# 参考调色板（dataviz 规范）
+# reference palette (dataviz guidelines)
 C_CURRENT, C_BASELINE = "#2a78d6", "#eb6834"
 C_SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4"]
 INK, INK2, MUTED, GRID, AXIS, SURFACE = "#0b0b0b", "#52514e", "#898781", "#e1e0d9", "#c3c2b7", "#fcfcfb"
 
 
 # ----------------------------------------------------------------------------
-# --collect 模式：在指定代码树下跑比对核心，输出每封邮件的 (min_confidence, 判定)
+# --collect mode: run the comparison core from a given source tree, emit (min_confidence, verdict) per email
 # ----------------------------------------------------------------------------
 def collect(tree: pathlib.Path, data: pathlib.Path) -> dict:
     here = str(pathlib.Path(__file__).resolve().parent)
-    sys.path = [str(tree)] + [p for p in sys.path if p not in (here, "")]   # 必须先于本树
+    sys.path = [str(tree)] + [p for p in sys.path if p not in (here, "")]   # must come before this tree
     from pipeline.run import classify_attachments
     from shipdoc_core.compare import compare_documents, Outcome
     from shipdoc_core.fields import FIELD_KEYS
@@ -55,9 +56,9 @@ def collect(tree: pathlib.Path, data: pathlib.Path) -> dict:
         if not (has_si and has_bl):
             continue
         res = classify_attachments(data, atts)
-        if isinstance(res[0], dict):                       # 当前签名 (slots, unassigned)
+        if isinstance(res[0], dict):                       # current signature (slots, unassigned)
             si = (res[0]["SI"] or (None, None))[0]; bl = (res[0]["BL"] or (None, None))[0]
-        else:                                              # 基线签名 (si, src, bl, src)
+        else:                                              # baseline signature (si, src, bl, src)
             si, _, bl, _ = res
         if si is None or bl is None or not si.readable or not bl.readable:
             continue
@@ -92,11 +93,11 @@ def collect_via_subprocess(tree: pathlib.Path) -> dict:
 
 
 # ----------------------------------------------------------------------------
-# 与参考答案对齐 → (confidences, correct, is_flagged)
+# align with the reference -> (confidences, correct, is_flagged)
 # ----------------------------------------------------------------------------
 def align(collected: dict, reference: dict):
-    """正确 = 核心标出的差异字段集合与参考答案一致。
-    不把 needs_review 算进正确性：转不转人工正是阈值扫描要决定的事。"""
+    """Correct = the set of differing fields flagged by the core equals the reference.
+    needs_review is not part of correctness: whether to escalate is exactly what the threshold sweep decides."""
     conf, correct, flagged, wrong = [], [], [], []
     for eid, v in collected.items():
         ref = reference[eid]
@@ -108,7 +109,7 @@ def align(collected: dict, reference: dict):
 
 
 # ----------------------------------------------------------------------------
-# 画图
+# plotting
 # ----------------------------------------------------------------------------
 def _style(ax, title: str):
     ax.set_facecolor(SURFACE)
@@ -163,7 +164,7 @@ def plot_threshold(series: dict, path: pathlib.Path):
         ax1.plot(xs, [p.expected_cost for p in pts], color=color, linewidth=2, label=name, zorder=2)
         ax1.plot([best.threshold], [best.expected_cost], "o", color=color, markersize=9,
                  markeredgecolor=SURFACE, markeredgewidth=2, zorder=3)
-        right = best.threshold > 0.7                      # 靠右的最优点，注释放左侧免得裁切
+        right = best.threshold > 0.7                      # optimum near the right edge: put the annotation on the left to avoid clipping
         ax1.annotate(f"optimum {best.threshold:.2f}\ncost {best.expected_cost:.1f}, review {best.review_rate:.0%}",
                      (best.threshold, best.expected_cost), textcoords="offset points",
                      xytext=(-12, 12) if right else (10, 12), ha="right" if right else "left",
@@ -198,10 +199,10 @@ def plot_progress(history: list[dict], path: pathlib.Path):
         ax.plot(xs, ys, color=C_SERIES[i], linewidth=lw, marker="o", markersize=ms,
                 markeredgecolor=SURFACE, markeredgewidth=1.5, label=label, zorder=3 if k == "final_score" else 2)
         last.setdefault(round(ys[-1], 3), []).append(label)
-    for y, labels in last.items():                      # 终点相同的系列合并成一个标签，避免重叠
+    for y, labels in last.items():                      # series with the same end value share one label to avoid overlap
         txt = f"all {len(labels)} = {y:.3f}" if len(labels) == len(keys) else f"{', '.join(labels)} {y:.3f}"
         ax.text(xs[-1] + 0.08, y, txt, va="center", fontsize=8.5, color=INK2)
-    # 每次 run 在 final 线上直接标值
+    # label the final score directly on each run
     for x, h in zip(xs, history):
         ax.text(x, h["final_score"] + 0.035, f"{h['final_score']:.3f}", ha="center", fontsize=8.5, color=INK)
     ax.set_xticks(xs)
@@ -222,13 +223,13 @@ def main():
     EVALS.mkdir(exist_ok=True)
 
     reference = json.load(open(ROOT / "submission.json", encoding="utf-8"))
-    print(f"参考答案: submission.json（当前版本，四轴 1.0）")
+    print(f"Reference: submission.json (current version, 1.0 on all four axes)")
 
     cur = collect_via_subprocess(ROOT)
     base = collect_via_subprocess(ensure_worktree(BASELINE_COMMIT))
     c_conf, c_ok, c_flag, c_wrong = align(cur, reference)
     b_conf, b_ok, b_flag, b_wrong = align(base, reference)
-    print(f"比对核心实际判定的邮件: 当前 {len(cur)} 封（错 {len(c_wrong)}），基线 {BASELINE_COMMIT} {len(base)} 封（错 {len(b_wrong)}）")
+    print(f"Emails actually judged by the comparison core: current {len(cur)} ({len(c_wrong)} wrong), baseline {BASELINE_COMMIT} {len(base)} ({len(b_wrong)} wrong)")
 
     cal = plot_calibration({f"before fixes ({BASELINE_COMMIT})": (C_BASELINE, b_conf, b_ok),
                             "current": (C_CURRENT, c_conf, c_ok)}, EVALS / "calibration.png")
@@ -247,16 +248,16 @@ def main():
         print(f"  {name:28} ECE {r['ece']:.4f}   n={r['n']}")
         for b in r["bins"]:
             print(f"      [{b['lo']:.1f},{b['hi']:.1f})  n={b['n']:3d}  mean_conf={b['mean_confidence']:.3f}  acc={b['accuracy']:.3f}")
-    print("\n=== 最优阈值 ===")
+    print("\n=== Optimal threshold ===")
     for name, r in thr.items():
         b = r["best"]
         print(f"  {name:28} threshold={b['threshold']:.3f}  cost={b['expected_cost']:.2f}  "
               f"review={b['review_n']}/{b['review_n']+b['auto_n']} ({b['review_rate']:.0%})  "
               f"missed={b['missed']}  false_alarms={b['false_alarms']}")
     if b_wrong:
-        print(f"\n=== 基线核心的 {len(b_wrong)} 处错误（min_conf, 我们标的字段, 参考字段）===")
+        print(f"\n=== {len(b_wrong)} errors of the baseline core (min_conf, our fields, reference fields) ===")
         for w in b_wrong: print("  ", w)
-    print(f"\n图已写入 {EVALS / 'calibration.png'}, {EVALS / 'threshold.png'}, {EVALS / 'progress.png'}")
+    print(f"\nPlots written: {EVALS / 'calibration.png'}, {EVALS / 'threshold.png'}, {EVALS / 'progress.png'}")
 
 
 if __name__ == "__main__":

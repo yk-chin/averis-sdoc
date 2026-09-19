@@ -1,4 +1,4 @@
-# shipdoc API —— Cloud Run
+# ShipDoc API - Cloud Run
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
@@ -7,12 +7,12 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 只拷代码；data/ .env .cache/ evals/ 由 .dockerignore / .gcloudignore 排除
+# code only; data/ .env .cache/ evals/ are excluded by .dockerignore / .gcloudignore
 COPY shipdoc_core/ shipdoc_core/
 COPY pipeline/ pipeline/
 COPY api/ api/
 
-# 非 root 运行；.cache 是 LLM 结果缓存目录（容器内临时，可写）
+# run as non-root; .cache is the LLM result cache (ephemeral, writable inside the container)
 RUN useradd --create-home --uid 10001 app \
  && mkdir -p /app/.cache && chown -R app:app /app
 USER app

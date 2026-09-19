@@ -1,15 +1,15 @@
 """
-文档解析器 —— 确定性优先，AI 兜底
-=================================
-观察：纯文本 SI/BL 是 "Label: Value" 的规则结构，**确定性解析器就能拿下**。
-所以我们不为每份文档都掏钱调 LLM，而是：
+Document parser - deterministic first, AI as fallback
+=====================================================
+Observation: plain-text SI/BL files are a regular "Label: Value" structure that a
+**deterministic parser handles outright**. So we do not pay for an LLM call per document:
 
-    确定性解析 → 成功则直接用（decided_by="rule"）
-               → 失败/字段缺失 → 才调 LLM/Vision（decided_by="llm"）
+    deterministic parse -> success: use it directly (decided_by="rule")
+                        -> failure / missing fields: only then call LLM/Vision (decided_by="llm")
 
-对 Averis 这种 300+ 客户的 BPO 来说，单据处理的**单位成本**是生意本身。
-一个 90% 走规则、10% 走 LLM 的系统，和一个 100% 调 LLM 的系统，
-在规模化时是两门不同的生意。这一点要写进 pitch。
+For a BPO like Averis with 300+ clients, the **unit cost** of document handling is the business.
+A system that is 90 % rules / 10 % LLM and one that is 100 % LLM are two different businesses
+at scale. This belongs in the pitch.
 """
 from __future__ import annotations
 
@@ -18,9 +18,9 @@ from dataclasses import dataclass, field
 
 from shipdoc_core.fields import resolve_label, FIELD_KEYS
 
-# 文档类型指纹（出现在首几行）
-# ⚠️ 顺序即优先级。真实数据里 SI 的抬头是 "BILL OF LADING INSTRUCTION" / "BL INSTRUCTION"，
-#    天真的 BL 正则会把它抢走 —— 这是把 SI 误判成 BL 的根因。SI 必须先匹配。
+# Document-type fingerprints (found in the first few lines)
+# Order is priority. In real data an SI is headed "BILL OF LADING INSTRUCTION" / "BL INSTRUCTION",
+# which a naive BL regex would steal - the root cause of SI being misread as BL. SI must match first.
 DOC_SIGNATURES = [
     ("SI",      re.compile(r"(SHIPPING\s+INSTRUCTION|BILL\s+OF\s+LADING\s+INSTRUCTION|"
                            r"\bB/?L\s+INSTRUCTION|SHIPPING\s+INSTRUCTIONS?)", re.I)),
@@ -30,19 +30,20 @@ DOC_SIGNATURES = [
     ("COO",     re.compile(r"CERTIFICATE\s+OF\s+ORIGIN", re.I)),
 ]
 
-# 空值占位符：'???'、'____'、'N/A'、'TBA' 等 → missing_value
+# Blank placeholders: '???', '____', 'N/A', 'TBA' etc. -> missing_value
 BLANK = re.compile(r"^[\s_?\-.]*$|^(N\.?/?A\.?|TBA|TBD|PENDING|XXX+)$", re.I)
 
-# ⚠️ 标签里会混排中文："Gross Weight毛重(KGS):" 在真实数据中出现 51 次。
-#    如果字符类里不含 CJK，整行会直接失配，该字段被当成"缺失"→ 整封邮件被误判
-#    为 NEEDS_REVIEW。这是 62 处字段缺失里 100% 的根因。
-#    解法：标签位置放行"除冒号外的任意字符"，CJK 交给 _norm_label 统一剔除。
+# Labels mix in Chinese: "Gross Weight毛重(KGS):" occurs 51 times in the real data.
+# If the character class excluded CJK the whole line would fail to match, the field would count as
+# "missing" and the entire email would be misjudged NEEDS_REVIEW - the root cause of 100 % of the
+# 62 missing-field cases. Fix: allow "anything but a colon" in the label and let _norm_label strip CJK.
 LABEL_LINE = re.compile(r"^\s*([A-Za-z][^:\n]{0,60}?)\s*:\s*(.*)$")
 
-# PDF 文本抽取的字符交错伪影（数据集中出现 3 次）：
-#   原文 "Notify Party/Intermediate Consignee: CERIEX" 被抽成
-#   "Notify: Party/Intermediate ConsCigEnReIEeX" —— 标签尾巴 "ignee" 与值 "CERIEX" 逐字交错。
-#   规律：单据的值全为大写，交错进来的标签残片是小写 → 去掉小写字母即还原真实值。
+# PDF text-extraction interleave artefact (seen 3 times in the dataset):
+#   "Notify Party/Intermediate Consignee: CERIEX" is extracted as
+#   "Notify: Party/Intermediate ConsCigEnReIEeX" - the label tail "ignee" interleaved with the value "CERIEX".
+#   Rule: document values are all upper-case, the interleaved label fragments are lower-case ->
+#   removing the lower-case letters recovers the true value.
 INTERLEAVED_LABEL = re.compile(r"^Party/Intermediate\s+Cons(?P<rest>\S.*)$")
 
 
@@ -60,8 +61,8 @@ def _deinterleave(value: str) -> str:
 class ParsedDoc:
     doc_type: str                       # SI | BL | INVOICE | PACKING | COO | UNKNOWN
     fields: dict = field(default_factory=dict)          # {field_key: value}
-    blanks: list = field(default_factory=list)          # 命中占位符的字段
-    near_miss: list = field(default_factory=list)       # 命中陷阱标签的记录
+    blanks: list = field(default_factory=list)          # fields that hit a blank placeholder
+    near_miss: list = field(default_factory=list)       # records that hit a trap label
     readable: bool = True
     note: str = ""
 
@@ -79,7 +80,7 @@ def detect_doc_type(text: str) -> str:
 def parse_text_document(text: str) -> ParsedDoc:
     if text is None or not text.strip():
         return ParsedDoc("UNKNOWN", readable=False, note="empty file")
-    # 乱码检测：可打印字符占比过低
+    # garbage detection: too few printable characters
     printable = sum(1 for c in text if c.isprintable() or c in "\n\r\t")
     if printable / max(len(text), 1) < 0.85:
         return ParsedDoc("UNKNOWN", readable=False, note="garbled bytes")
@@ -97,14 +98,14 @@ def parse_text_document(text: str) -> ParsedDoc:
             continue
         if is_near:
             doc.near_miss.append({"label": raw_label, "would_be": key, "value": raw_value})
-            continue                                  # 陷阱标签不采纳
+            continue                                  # trap labels are not adopted
 
-        # 续行：下一行缩进且不含标签 → 属于地址，本比对不采纳（只比法人主体）
+        # continuation: an indented next line without a label is address text, not used here (entity only)
         if BLANK.match(raw_value):
             doc.blanks.append(key)
             doc.fields.setdefault(key, None)
             continue
-        doc.fields.setdefault(key, raw_value)         # 首次出现优先
+        doc.fields.setdefault(key, raw_value)         # first occurrence wins
 
     if doc.doc_type in ("SI", "BL") and not doc.fields:
         doc.readable = False

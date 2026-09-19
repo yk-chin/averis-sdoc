@@ -10,7 +10,7 @@
   "pred_review": 20
  },
  "P1": {
-  "desc": "字段标签同义轮换",
+  "desc": "field-label synonyms rotated",
   "coverage": {
    "txt": [
     192,
@@ -40,7 +40,7 @@
   "pred_review": 20
  },
  "P2": {
-  "desc": "公司后缀写法 (SI 变体A / BL 变体B)",
+  "desc": "company-suffix spelling (SI variant A / BL variant B)",
   "coverage": {
    "txt": [
     150,
@@ -70,7 +70,7 @@
   "pred_review": 20
  },
  "P3": {
-  "desc": "重量单位 (SI→MT / BL→LBS)",
+  "desc": "weight units (SI->MT / BL->LBS)",
   "coverage": {
    "txt": [
     185,
@@ -100,7 +100,7 @@
   "pred_review": 20
  },
  "P4a": {
-  "desc": "港口：SI 只留名字",
+  "desc": "ports: SI name only",
   "coverage": {
    "txt": [
     93,
@@ -130,7 +130,7 @@
   "pred_review": 20
  },
  "P4b": {
-  "desc": "港口：BL 只留 LOCODE（仅一致对）",
+  "desc": "ports: BL LOCODE only (consistent pairs)",
   "coverage": {
    "txt": [
     86,
@@ -160,7 +160,7 @@
   "pred_review": 20
  },
  "P5": {
-  "desc": "附件文件名去掉 _SI/_BL",
+  "desc": "attachment names without _SI/_BL",
   "coverage": {
    "txt": [
     0,

@@ -1,26 +1,27 @@
 """
-扰动测试 (perturbation test) —— 1.0 是泛化还是拟合？
-====================================================
-在**不改变语义**的前提下扰动数据集副本，重跑 pipeline，用 /submit 打分。
-分数明显下跌的那一项，就是真正的脆弱点。
+Perturbation test - is the 1.0 generalisation or fitting?
+=========================================================
+Perturb a COPY of the dataset without changing its meaning, re-run the pipeline, score via /submit.
+Whichever perturbation drops the score is the real weak point.
 
-用法：  python scripts_perturb.py            # 跑全部
-        python scripts_perturb.py P3 P5      # 只跑指定项
-产出：  evals/perturbation.json（每项的分数 + 覆盖率）
+Usage:   python scripts_perturb.py            # run all
+         python scripts_perturb.py P3 P5      # run selected
+Output:  evals/perturbation.json (score + coverage per perturbation)
 
-约束（硬性）：
-  - 原始 data/ 只读；副本写到 .cache/perturb/<P>/
-  - 不读 ground_truth；只读 inbox / attachments 和 /submit 返回的聚合分数
-  - 不写 evals/history.jsonl（那是主线进度指标，扰动跑分不算进去）
-  - PDF 附件不改（28 个），每项报告实际覆盖率
+Hard constraints:
+  - the original data/ is read-only; copies go to .cache/perturb/<P>/
+  - ground_truth is never read; only inbox / attachments and the aggregate scores returned by /submit
+  - evals/history.jsonl is not written (that is the mainline progress metric; perturbation runs do not count)
+  - PDF attachments (28) are left untouched; every perturbation reports its actual coverage
 
-扰动项：
-  P1  字段标签换成同义写法（Port of Loading → Load Port → POL …），SI/BL 各用不同别名
-  P2  公司后缀写法（CO., LTD ↔ Co Ltd ↔ Company Limited），SI 用变体 A、BL 用变体 B
-  P3  重量单位：SI 换算成 MT（2 位小数），BL 换算成 LBS（1 位小数）
-  P4a 港口：SI 去掉 UN/LOCODE 只留名字，BL 不动
-  P4b 港口：BL 只留 UN/LOCODE —— 仅当名字与代码在真实 LOCODE 表里一致（避免抹掉主办方埋的缺陷）
-  P5  附件文件名去掉 _SI / _BL 标记（email_001_SI.txt → email_001_doc_a.txt）
+Perturbations:
+  P1  field labels replaced by synonyms (Port of Loading -> Load Port -> POL ...), different alias on SI and BL
+  P2  company-suffix spelling (CO., LTD <-> Co Ltd <-> Company Limited), variant A on SI, variant B on BL
+  P3  weight units: SI converted to MT (2 decimals), BL to LBS (1 decimal)
+  P4a ports: SI keeps the name only (UN/LOCODE removed), BL untouched
+  P4b ports: BL keeps the UN/LOCODE only - but only where name and code agree in the real LOCODE table
+      (so the organiser's planted defects are not erased)
+  P5  attachment names lose their _SI / _BL tags (email_001_SI.txt -> email_001_doc_a.txt)
 """
 from __future__ import annotations
 import json, pathlib, re, shutil, subprocess, sys, urllib.request
@@ -35,7 +36,7 @@ WORK = ROOT / ".cache" / "perturb"
 SERVER = "http://localhost:8080"
 PY = sys.executable
 
-# 真实 UN/LOCODE（行业知识，非数据集反推）。P4b 只在 (code, name) 一致时才把 BL 改成纯代码。
+# Real UN/LOCODEs (industry knowledge, not derived from the dataset). P4b turns a BL port into a bare code only when (code, name) agree.
 REAL_LOCODE = {
     "MYPKG": "PORT KLANG", "SGSIN": "SINGAPORE", "INNSA": "NHAVA SHEVA", "VNSGN": "HO CHI MINH CITY",
     "USNYC": "NEW YORK", "KRPUS": "BUSAN", "CNSHA": "SHANGHAI", "CNNTG": "NANTONG", "PECLL": "CALLAO",
@@ -43,12 +44,12 @@ REAL_LOCODE = {
     "LTKLJ": "KLAIPEDA", "NGAPP": "APAPA", "USSAV": "SAVANNAH", "KRPTK": "PYEONGTAEK", "MMRGN": "YANGON",
     "USBAL": "BALTIMORE", "AUBNE": "BRISBANE", "USLGB": "LONG BEACH", "ILASH": "ASHDOD", "PLGDN": "GDANSK",
     "CLVAP": "VALPARAISO", "SIKOP": "KOPER", "JOAQB": "AQABA", "USHOU": "HOUSTON", "PHCEB": "CEBU",
-    "INTUT": "TUTICORIN",          # IDBUA (Buatan) 未能确认为官方代码，不列入
+    "INTUT": "TUTICORIN",          # IDBUA (Buatan) could not be confirmed as an official code; left out
 }
 
 
 # ----------------------------------------------------------------------------
-# 单行变换：(label, value, side, seed) → (label, value)。side ∈ {"SI","BL"}
+# Per-line transforms: (label, value, side, seed) -> (label, value). side in {"SI","BL"}
 # ----------------------------------------------------------------------------
 def _title(s: str) -> str:
     return " ".join(w.capitalize() if w.isalpha() else w for w in s.split())
@@ -59,7 +60,7 @@ def p1_label(label, value, side, seed):
     if key is None or near:
         return label, value
     aliases = [a for a in FIELD_BY_KEY[key].aliases if a != label.lower()]
-    # SI/BL 取不同别名；用 seed 让每封邮件轮换
+    # different alias on SI and BL; the seed rotates it per email
     pick = aliases[(seed + (0 if side == "SI" else 3)) % len(aliases)]
     return _title(pick), value
 
@@ -93,7 +94,7 @@ def p3_weight(label, value, side, seed):
     kg = float(m.group(0).replace(",", ""))
     if side == "SI":
         mt = kg / 1000
-        new = f"{mt:g} MT" if mt == int(mt) else f"{mt:.2f} MT"      # 2 位小数避免千分位歧义
+        new = f"{mt:g} MT" if mt == int(mt) else f"{mt:.2f} MT"      # 2 decimals avoid the thousands-separator ambiguity
     else:
         new = f"{kg * 2.20462262:,.1f} LBS"
     return label, new
@@ -115,23 +116,23 @@ def p4b_port_bl_code_only(label, value, side, seed):
         return label, value
     code = m.group(1)
     name = re.sub(r"\s*\(.*?\)\s*", " ", value).split(",")[0].strip().upper()
-    if REAL_LOCODE.get(code) and REAL_LOCODE[code] in name:      # 名字与代码一致才换，保住缺陷语义
+    if REAL_LOCODE.get(code) and REAL_LOCODE[code] in name:      # only replace when name and code agree, keeping planted defects intact
         return label, code
     return label, value
 
 
 PERTURBATIONS = {
-    "P1": ("字段标签同义轮换", p1_label),
-    "P2": ("公司后缀写法 (SI 变体A / BL 变体B)", p2_suffix),
-    "P3": ("重量单位 (SI→MT / BL→LBS)", p3_weight),
-    "P4a": ("港口：SI 只留名字", p4a_port_si_name_only),
-    "P4b": ("港口：BL 只留 LOCODE（仅一致对）", p4b_port_bl_code_only),
-    "P5": ("附件文件名去掉 _SI/_BL", None),
+    "P1": ("field-label synonyms rotated", p1_label),
+    "P2": ("company-suffix spelling (SI variant A / BL variant B)", p2_suffix),
+    "P3": ("weight units (SI->MT / BL->LBS)", p3_weight),
+    "P4a": ("ports: SI name only", p4a_port_si_name_only),
+    "P4b": ("ports: BL LOCODE only (consistent pairs)", p4b_port_bl_code_only),
+    "P5": ("attachment names without _SI/_BL", None),
 }
 
 
 # ----------------------------------------------------------------------------
-# 把变换应用到一份附件
+# apply a transform to one attachment
 # ----------------------------------------------------------------------------
 def _side(name: str) -> str:
     return "SI" if "_SI." in name.upper() else "BL"
@@ -203,7 +204,7 @@ def build_copy(name: str, fn) -> dict:
         shutil.rmtree(dst)
     shutil.copytree(DATA, dst)
     cov = {"txt": [0, 0], "xlsx": [0, 0], "docx": [0, 0], "pdf": [0, 0], "lines_changed": 0}
-    if fn is None:                                             # P5：改文件名 + inbox 引用
+    if fn is None:                                             # P5: rename files + inbox references
         renamed = 0
         for p in sorted((dst / "attachments").glob("*")):
             new = p.name.replace("_SI.", "_doc_a.").replace("_BL.", "_doc_b.")
@@ -225,7 +226,7 @@ def build_copy(name: str, fn) -> dict:
         elif ext == "docx":
             n = apply_docx(p, fn)
         else:
-            continue                                            # pdf 不改
+            continue                                            # pdf untouched
         if n:
             cov[ext][0] += 1; cov["lines_changed"] += n
     return cov
@@ -251,10 +252,10 @@ def run_and_score(data_dir: pathlib.Path, out: pathlib.Path) -> dict:
 
 def main(selected: list[str]):
     WORK.mkdir(parents=True, exist_ok=True)
-    print("baseline（未扰动）…")
+    print("baseline (unperturbed) ...")
     base = run_and_score(DATA, WORK / "baseline_submission.json")
     results = {"baseline": base}
-    rows = [("baseline", "未扰动", base, {})]
+    rows = [("baseline", "unperturbed", base, {})]
     for name, (desc, fn) in PERTURBATIONS.items():
         if selected and name not in selected:
             continue
@@ -267,24 +268,24 @@ def main(selected: list[str]):
         results[name] = {"desc": desc, "coverage": cov, **sc}
         rows.append((name, desc, sc, cov))
 
-    print("\n| 扰动 | 说明 | final | Δ | macro_f1 | defect_f1 | field_f1 | end_to_end | esc_P | esc_R | 覆盖 |")
+    print("\n| perturbation | description | final | delta | macro_f1 | defect_f1 | field_f1 | end_to_end | esc_P | esc_R | coverage |")
     print("|---|---|---|---|---|---|---|---|---|---|---|")
     for name, desc, sc, cov in rows:
         if "error" in sc:
             print(f"| {name} | {desc} | ERROR | | | | | | | | {sc['error'][:60]} |"); continue
         d = sc["final_score"] - base["final_score"]
         if cov.get("renamed") is not None:
-            c = f"{cov['renamed']} 个文件改名"
+            c = f"{cov['renamed']} files renamed"
         elif cov:
             c = " ".join(f"{k}:{v[0]}/{v[1]}" for k, v in cov.items() if isinstance(v, list) and v[1])
-            c += f" ({cov['lines_changed']} 行)"
+            c += f" ({cov['lines_changed']} lines)"
         else:
             c = "—"
         print(f"| {name} | {desc} | {sc['final_score']:.4f} | {d:+.4f} | {sc['macro_f1']:.4f} | {sc['defect_f1']:.4f} | "
               f"{sc['field_f1']:.3f} | {sc['end_to_end']:.4f} | {sc['esc_precision']:.3f} | {sc['esc_recall']:.3f} | {c} |")
     (ROOT / "evals").mkdir(exist_ok=True)
     json.dump(results, open(ROOT / "evals" / "perturbation.json", "w", encoding="utf-8"), indent=1, ensure_ascii=False)
-    print(f"\n写入 evals/perturbation.json；副本在 {WORK}")
+    print(f"\nWritten to evals/perturbation.json; copies under {WORK}")
 
 
 if __name__ == "__main__":
