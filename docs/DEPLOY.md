@@ -29,7 +29,8 @@ Service: `https://shipdoc-api-705106212012.asia-southeast1.run.app`　Project: `
 | `POST /failures/{key}/retry` | X-API-Key | Re-enqueue from the stored input (`clear_fault` strips demo fault injection). Success marks the item RECOVERED |
 | `POST /admin/chaos?enabled=true\|false` | X-API-Key | Demo switch: every task attempt fails while enabled |
 | `POST /tasks/process` | OIDC (Cloud Tasks) or X-API-Key | One attempt of one email; 503 asks Cloud Tasks to retry, 200 on success or after dead-lettering |
-| `GET /report/{id}` | - | Result by idempotency key or email_id, persisted in Firestore; includes `review` (if any) and `effective_decision` |
+| `GET /report/{id}` | - | Result by idempotency key or email_id, persisted in Firestore; includes `email` (from / subject / body / attachment names), `review` (if any) and `effective_decision` |
+| `GET /reports` | - | Console listing: `{count, items[]}` of slim rows (key, email_id, from, subject, attachments, report_status, category, status, review_reason, review_detail, has_defect, defect_fields, decided_by, updated). `?limit=` (max 1000) `&category=` `&status=` `&review_reason=`; filters run in Python after one ordered read |
 | `POST /report/{id}/review` | X-API-Key | Human review: `{decision: confirmed|corrected, corrected_fields?, reviewer_note?, reviewer}` -> audit trail stored under `reports/{key}.review`; AI decision never overwritten; not used for submission.json |
 
 Request body: `{"email_id","from","subject","body","attachments":[{"name","content_base64"} or {"name","text"}]}`.

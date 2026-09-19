@@ -217,3 +217,33 @@ def test_review_confirm_and_correct_keep_original(monkeypatch):
     assert client.post(f"/report/{key}/review", json={"decision": "corrected", "reviewer": "ops"}, headers={"X-API-Key": "secret"}).status_code == 422
     assert client.post(f"/report/{key}/review", json={"decision": "corrected", "reviewer": "ops", "corrected_fields": {"nope": 1}}, headers={"X-API-Key": "secret"}).status_code == 422
     assert client.post("/report/does-not-exist/review", json={"decision": "confirmed", "reviewer": "ops"}, headers={"X-API-Key": "secret"}).status_code == 404
+
+
+# ---------------------------------------------------------------- console listing: slim rows, email header kept
+def test_reports_lists_slim_rows_with_email_header_and_filters():
+    from fastapi.testclient import TestClient
+    import api.main as m
+    m.store = MemoryStore()
+    client = TestClient(m.app)
+    client.post("/process", json=_email("ls-1"))
+    r = client.post("/batch", json={"emails": [_email("ls-2")]})
+    assert r.status_code == 200
+    deadline = time.time() + 10
+    while time.time() < deadline and client.get("/report/ls-2").json()["status"] != "DONE":
+        time.sleep(0.2)
+    rows = client.get("/reports").json()
+    assert rows["count"] == 2
+    by_id = {x["email_id"]: x for x in rows["items"]}
+    for eid in ("ls-1", "ls-2"):
+        row = by_id[eid]
+        assert row["subject"] == "TO CONFIRM DOCS" and row["from"] == "a@b" and row["attachments"] == 2
+        assert row["category"] == "BL_COMPARISON" and row["status"] == "MISMATCH" and row["defect_fields"] == ["container_count"]
+        assert row["report_status"] == "DONE" and row["decided_by"] == "rule"
+        assert "evidence" not in row and "body" not in row and "result" not in row
+    assert client.get("/reports?category=SPAM").json()["count"] == 0
+    assert client.get("/reports?status=MISMATCH").json()["count"] == 2
+    assert client.get("/reports?review_reason=missing_attachment").json()["count"] == 0
+    # the stored report keeps the email header (incl. body) after the batch task finished
+    rep = client.get("/report/ls-2").json()
+    assert rep["email"]["subject"] == "TO CONFIRM DOCS" and "Attached are the SI" in rep["email"]["body"]
+    assert rep["email"]["attachments"] == ["ls-2_SI.txt", "ls-2_BL.txt"]

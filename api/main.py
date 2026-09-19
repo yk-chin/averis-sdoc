@@ -157,6 +157,12 @@ def _materialise(email: dict, workdir: pathlib.Path) -> dict:
             "subject": email.get("subject", ""), "body": email.get("body", ""), "attachments": rels}
 
 
+def _email_summary(e: dict) -> dict:
+    """What the console needs to list and show an email without the attachment payloads."""
+    return {"from": e.get("from"), "subject": e.get("subject"), "body": e.get("body"),
+            "attachments": [a.get("name") for a in e.get("attachments") or []]}
+
+
 def _process_email(email: dict) -> dict:
     """Run the pipeline on one email dict. Raises on any failure (that is what the task layer relies on)."""
     t0 = time.time()
@@ -207,7 +213,7 @@ def process(email: EmailIn, request: Request):
         raise HTTPException(422, str(ex))
     key = idempotency_key(e)
     store.set(REPORTS, key, {"status": "DONE", "email_id": e["email_id"], "key": key, "result": result,
-                             "attempts": 1, "error": None, "updated": now()})
+                             "email": _email_summary(e), "attempts": 1, "error": None, "updated": now()})
     return dict(result, key=key)
 
 
@@ -228,7 +234,8 @@ def batch(payload: BatchIn, request: Request, x_api_key: Optional[str] = Header(
                           "existing_status": existing["status"]})
             continue
         store.set(REPORTS, key, {"status": "QUEUED", "email_id": e["email_id"], "key": key, "batch_id": batch_id,
-                                 "attempts": 0, "error": None, "result": None, "updated": now()})
+                                 "email": _email_summary(e), "attempts": 0, "error": None, "result": None,
+                                 "updated": now()})
         ref = taskmod.enqueue(ctx, {"key": key, "batch_id": batch_id, "email": e})
         items.append({"email_id": e["email_id"], "key": key, "status": "queued", "task": ref})
     queued = sum(1 for i in items if i["status"] == "queued")
@@ -279,6 +286,34 @@ def _effective_decision(r: dict) -> Optional[dict]:
     if rev and rev.get("human_decision") == "corrected":
         return {**ai, **rev.get("corrections", {})}
     return ai
+
+
+def _report_row(r: dict) -> dict:
+    """One slim row for the console: decision + email header, never evidence or body."""
+    res = r.get("result") or {}
+    d = res.get("decision") or {}
+    em = r.get("email") or {}
+    return {"key": r.get("key") or r.get("id"), "email_id": r.get("email_id"), "from": em.get("from"),
+            "subject": em.get("subject"), "attachments": len(em.get("attachments") or []),
+            "report_status": r.get("status"), "category": d.get("category"), "status": d.get("status"),
+            "review_reason": d.get("review_reason"), "review_detail": res.get("review_detail") or [],
+            "has_defect": d.get("has_defect", False), "defect_fields": d.get("defect_fields") or [],
+            "decided_by": d.get("decided_by"), "updated": r.get("updated")}
+
+
+@app.get("/reports", summary="List processed emails (slim rows for the console; no key needed)")
+def reports(limit: int = 1000, category: Optional[str] = None, status: Optional[str] = None,
+            review_reason: Optional[str] = None):
+    """Filters run in Python after one ordered read so no composite index is needed; 520 emails is small."""
+    limit = max(1, min(limit, 1000))
+    rows = [_report_row(r) for r in store.list(REPORTS, limit=limit)]
+    if category:
+        rows = [r for r in rows if r["category"] == category]
+    if status:
+        rows = [r for r in rows if r["status"] == status]
+    if review_reason:
+        rows = [r for r in rows if r["review_reason"] == review_reason]
+    return {"count": len(rows), "items": rows}
 
 
 @app.get("/report/{ident}", summary="Result by idempotency key or email_id")
