@@ -18,7 +18,7 @@ Before hardening P4b = 0.68 (LOCODE table too small) and P5 = 0.30 (attachments 
 **Known, not done** (`docs/FINAL_ROUND_RISKS.md`): R3 legal-qualifier rule, R5 interleave generalisation, R6 value on the next line. R1 (Vertex) is done - local ADC and Cloud Run both verified.
 **Cost parameters**: cost_missed=8 / false_alarm=1 / review=0.35 at the top of `scripts_calibration.py` are placeholders; Averis to confirm at Workshop 2 on 21 Sep.
 
-**Tests**: `python -m pytest tests/ -q` -> 63 passed (55 pipeline/core + 8 async layer).
+**Tests**: `python -m pytest tests/ -q` -> 68 passed (60 pipeline/core + 8 async layer).
 
 **Language**: everything in the repo and every demo-facing string is English; only literal dataset samples such as "Gross Weight毛重(KGS)" keep their Chinese.
 

@@ -68,6 +68,9 @@ def expects_attachments(email: dict) -> bool:
     return True
 
 
+LLM_THRESHOLD = 0.80   # rule results below this confidence go to the LLM; the BL_COMPARISON branches return >= 0.80 and are final
+
+
 def classify_email(email: dict, has_si: bool, has_bl: bool) -> tuple[str, str, float]:
     """Returns (category, decided_by, confidence)"""
     # The advanced data has misleading subjects (same body under unrelated subjects, spam under business subjects) -

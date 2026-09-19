@@ -75,7 +75,7 @@ data/
 
 ```bash
 python pipeline/run.py ./data submission.json      # pipeline → submission.json
-python -m pytest tests/ -q                          # 63 tests
+python -m pytest tests/ -q                          # 68 tests
 python -m uvicorn api.main:app --port 8090          # the API locally
 ```
 

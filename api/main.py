@@ -75,10 +75,6 @@ class BatchIn(BaseModel):
     emails: list[EmailIn]
 
 
-class RetryIn(BaseModel):
-    clear_fault: bool = Field(True, description="Strip demo fault injection (fail_times) before retrying")
-
-
 # ----------------------------------------------------------------------------- helpers
 def _check_key(x_api_key: Optional[str]) -> None:
     if API_TOKEN and x_api_key != API_TOKEN:
@@ -192,10 +188,8 @@ def batch(payload: BatchIn, request: Request, x_api_key: Optional[str] = Header(
         ref = taskmod.enqueue(ctx, {"key": key, "batch_id": batch_id, "email": e})
         items.append({"email_id": e["email_id"], "key": key, "status": "queued", "task": ref})
     queued = sum(1 for i in items if i["status"] == "queued")
-    store.set(JOBS, batch_id, {"batch_id": batch_id, "total": queued, "done": 0, "failed": 0,
-                               "duplicates": len(items) - queued,
-                               "keys": [i["key"] for i in items if i["status"] == "queued"],
-                               "created": now(), "updated": now()})
+    store.set(JOBS, batch_id, {"batch_id": batch_id, "total": queued, "duplicates": len(items) - queued,
+                               "keys": [i["key"] for i in items if i["status"] == "queued"], "updated": now()})
     return {"batch_id": batch_id, "queued": queued, "duplicates": len(items) - queued, "items": items,
             "mode": ctx.mode}
 
@@ -253,14 +247,13 @@ def failure(key: str):
 
 
 @app.post("/failures/{key}/retry", summary="Retry a dead-lettered email from its stored input")
-def retry(key: str, request: Request, body: RetryIn | None = None, x_api_key: Optional[str] = Header(default=None)):
+def retry(key: str, request: Request, x_api_key: Optional[str] = Header(default=None)):
     _check_key(x_api_key)
     r = store.get(DEAD_LETTER, key)
     if r is None:
         raise HTTPException(404, f"no dead-letter item {key}")
     email = dict(r.get("input") or {})
-    if (body is None or body.clear_fault) and "fail_times" in email:
-        email.pop("fail_times")                       # the operator fixed the cause; retry without the injected fault
+    email.pop("fail_times", None)                     # the operator fixed the cause; retry without the injected fault
     ctx = _ctx(request)
     batch_id = r.get("batch_id")
     store.update(DEAD_LETTER, key, {"status": "RETRYING", "retried_at": now(), "updated": now(),

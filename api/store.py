@@ -53,8 +53,8 @@ class MemoryStore:
         with self._lock:
             docs = [dict(d, id=k) for k, d in self._data.get(col, {}).items()]
         if where:
-            f, op, v = where
-            docs = [d for d in docs if (d.get(f) == v if op == "==" else d.get(f) != v)]
+            f, _, v = where
+            docs = [d for d in docs if d.get(f) == v]
         docs.sort(key=lambda d: d.get("updated", 0), reverse=True)
         return docs[:limit]
 
@@ -85,10 +85,10 @@ class FirestoreStore:
             except FailedPrecondition:
                 # composite index (field + updated) not built yet: order only, filter in memory.
                 # The index is created in docs/DEPLOY.md; this keeps the API usable meanwhile.
-                f, op, v = where
+                f, _, v = where
                 rows = [dict(s.to_dict(), id=s.id) for s in
                         base.order_by("updated", direction="DESCENDING").limit(limit * 10).stream()]
-                return [r for r in rows if (r.get(f) == v if op == "==" else r.get(f) != v)][:limit]
+                return [r for r in rows if r.get(f) == v][:limit]
         q = base.order_by("updated", direction="DESCENDING").limit(limit)
         return [dict(s.to_dict(), id=s.id) for s in q.stream()]
 

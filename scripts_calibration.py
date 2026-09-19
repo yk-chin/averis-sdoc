@@ -44,7 +44,7 @@ def collect(tree: pathlib.Path, data: pathlib.Path) -> dict:
     here = str(pathlib.Path(__file__).resolve().parent)
     sys.path = [str(tree)] + [p for p in sys.path if p not in (here, "")]   # must come before this tree
     from pipeline.run import classify_attachments
-    from shipdoc_core.compare import compare_documents, Outcome
+    from shipdoc_core.compare import compare_documents
     from shipdoc_core.fields import FIELD_KEYS
 
     out = {}
@@ -222,7 +222,7 @@ def main():
     EVALS.mkdir(exist_ok=True)
 
     reference = json.load(open(ROOT / "submission.json", encoding="utf-8"))
-    print(f"Reference: submission.json (current version, 1.0 on all four axes)")
+    print("Reference: submission.json (current version, 1.0 on all four axes)")
 
     cur = collect_via_subprocess(ROOT)
     base = collect_via_subprocess(ensure_worktree(BASELINE_COMMIT))

@@ -75,7 +75,7 @@ def _collapse_initials(s: str) -> str:
 _AGENT_QUALIFIER = re.compile(r"\b(ON\s+BEHALF\s+OF|O/B|C/O|CARE\s+OF|AS\s+AGENTS?\s+(?:FOR|OF))\b", re.I)
 
 
-def normalize_party(raw: str, *, keep_address: bool = False) -> str:
+def normalize_party(raw: str) -> str:
     """
     Company-name normalisation. By default only the legal entity is kept (up to the
     corporate suffix), because address layouts differ wildly between SI and BL and
@@ -85,7 +85,6 @@ def normalize_party(raw: str, *, keep_address: bool = False) -> str:
       0. take the name line before "|" and cut the agent after ON BEHALF OF / C/O
       1. if a corporate suffix is found (LTD / SDN BHD / KK ...), entity = start -> end of suffix
       2. only if no suffix is found, fall back to the first segment by newline / comma
-    keep_address=True keeps the full text, for showing the original in a review UI.
     """
     s = basic_clean(raw).upper()
     if not s:
@@ -93,22 +92,20 @@ def normalize_party(raw: str, *, keep_address: bool = False) -> str:
     s = _collapse_initials(s)
 
     suffix_hit = None
-    if not keep_address:
-        s = re.split(r"\s*\|\s*", s)[0]                 # name line; after "|" are address continuation lines
-        m = _AGENT_QUALIFIER.search(s)
-        if m and m.start() > 0:
-            s = s[: m.start()]
-        for key in _CORP_KEYS:
-            pattern = r"\b" + r"[\s.,]*".join(map(re.escape, key.split())) + r"\b\.?"
-            m = re.search(pattern, s)
-            if m:
-                suffix_hit = key
-                s = s[: m.end()]
-                break
-        else:
-            first = re.split(r"\s*\|\s*", s)[0]
-            parts = re.split(r"\s*(?:,|;)\s*", first)
-            s = parts[0] if len(parts[0]) >= 4 else first
+    s = re.split(r"\s*\|\s*", s)[0]                     # name line; after "|" are address continuation lines
+    m = _AGENT_QUALIFIER.search(s)
+    if m and m.start() > 0:
+        s = s[: m.start()]
+    for key in _CORP_KEYS:
+        pattern = r"\b" + r"[\s.,]*".join(map(re.escape, key.split())) + r"\b\.?"
+        m = re.search(pattern, s)
+        if m:
+            suffix_hit = key
+            s = s[: m.end()]
+            break
+    else:
+        parts = re.split(r"\s*(?:,|;)\s*", s)
+        s = parts[0] if len(parts[0]) >= 4 else s
 
     s = re.sub(r"[^\w\s&]", " ", s)
     s = _ADDRESS_NOISE.sub(" ", s)

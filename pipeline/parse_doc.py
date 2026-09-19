@@ -16,7 +16,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from shipdoc_core.fields import resolve_label, FIELD_KEYS
+from shipdoc_core.fields import resolve_label
 
 # Document-type fingerprints (found in the first few lines)
 # Order is priority. In real data an SI is headed "BILL OF LADING INSTRUCTION" / "BL INSTRUCTION",

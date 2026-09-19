@@ -5,7 +5,7 @@ LLM fallback classifier - called only when the rule confidence is too low
 - structured output: response_schema = pydantic model, validated by the SDK and again locally
 - 10 s timeout (the API minimum), 1 retry; any failure returns None and the caller keeps the rule result
 - never raises into the main pipeline
-- model fallback chain: GEMINI_MODEL may be a comma-separated priority list; 404 drops a model, 429/503 cools it for 60 s and switches
+- model fallback chain: GEMINI_MODEL may be a comma-separated priority list; 404 retires a model, any other failure cools it for 60 s and switches
 - results cached in .cache/ by hash of (prompt version, subject, body), so repeated evals are free;
   changing the prompt / few-shot / schema invalidates the old cache automatically
 
@@ -252,8 +252,7 @@ def _cache_key(email: dict) -> str:
 #   429/503 still failing after the retry -> cooled down for COOLDOWN_S seconds, next model used meanwhile
 # ----------------------------------------------------------------------------
 COOLDOWN_S = 60.0
-_dead_models: set[str] = set()
-_cooldown_until: dict[str, float] = {}
+_cooldown_until: dict[str, float] = {}               # model -> time it may be used again (inf = retired)
 
 
 def _model_chain() -> list[str]:
@@ -264,20 +263,16 @@ def _model_chain() -> list[str]:
 
 def _available_models() -> list[str]:
     now = time.time()
-    return [m for m in _model_chain()
-            if m not in _dead_models and _cooldown_until.get(m, 0.0) <= now]
+    return [m for m in _model_chain() if _cooldown_until.get(m, 0.0) <= now]
 
 
 def _err_kind(e: Exception) -> str:
+    """gone (model missing) | quota (rate limit) | other. Only these three change what the caller does."""
     s = str(e)
     if "404" in s or "NOT_FOUND" in s:
         return "gone"
     if "429" in s or "RESOURCE_EXHAUSTED" in s:
         return "quota"
-    if "503" in s or "UNAVAILABLE" in s or "overloaded" in s.lower():
-        return "busy"
-    if "timeout" in s.lower() or "timed out" in s.lower():
-        return "timeout"
     return "other"
 
 
@@ -373,8 +368,8 @@ def _classify(email: dict) -> Optional[Classification]:
             except Exception as e:
                 last_err = e
                 kind = _err_kind(e)
-                if kind == "gone":                   # model missing: no retry, drop it
-                    _dead_models.add(model)
+                if kind == "gone":                   # model missing: no retry, retired for this run
+                    _cooldown_until[model] = float("inf")
                     break
                 if attempt < MAX_ATTEMPTS:
                     STATS["retries"] += 1

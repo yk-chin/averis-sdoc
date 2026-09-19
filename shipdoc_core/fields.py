@@ -33,7 +33,6 @@ class FieldKind(str, Enum):
 
 class Severity(str, Enum):
     HIGH = "high"       # directly affects customs clearance / delivery / billing
-    MEDIUM = "medium"
 
 
 @dataclass(frozen=True)

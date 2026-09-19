@@ -17,7 +17,7 @@ from dataclasses import dataclass, asdict
 from difflib import SequenceMatcher
 from enum import Enum
 
-from .fields import FIELDS, FIELD_BY_KEY, FieldKind, Severity
+from .fields import FIELDS, FIELD_BY_KEY, FieldKind
 from .normalize import (
     normalize_party, normalize_port, normalize_count,
     normalize_weight_kg, ports_match, basic_clean,
@@ -212,8 +212,10 @@ def compare_documents(
     Compare the SI and BL attached to one email.
 
     si / bl: {field_key: value} - produced by the extraction layer (LLM/OCR) and schema-validated
-    review_threshold: below this confidence the case goes to a human. The default comes from the
-                      cost-sensitive threshold sweep (see evaluate.optimal_threshold), not a guess.
+    review_threshold: fields whose confidence falls below it are flagged needs_review in the report.
+                      Note: `confidence` on a MISMATCH is 1 - similarity, i.e. a distance, not a
+                      calibrated probability; the pipeline (run.py) escalates on UNDETERMINED only and
+                      does not use this threshold. scripts_calibration.py measures the real trade-off.
     """
     si_conf, bl_conf = si_conf or {}, bl_conf or {}
     results = [

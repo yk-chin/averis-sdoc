@@ -28,7 +28,7 @@ import json, pathlib, re, shutil, subprocess, sys, urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
-from shipdoc_core.fields import FIELDS, FIELD_BY_KEY, FieldKind, resolve_label
+from shipdoc_core.fields import FIELD_BY_KEY, FieldKind, resolve_label
 from pipeline.parse_doc import LABEL_LINE
 
 DATA = ROOT / "data"

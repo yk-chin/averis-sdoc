@@ -11,12 +11,11 @@ from shipdoc_core.compare import compare_documents, Outcome
 from shipdoc_core.fields import FIELD_KEYS
 from pipeline.parse_doc import parse_text_document
 from pipeline.parse_office import office_to_text
-from pipeline.classify import classify_email, expects_attachments
+from pipeline.classify import classify_email, expects_attachments, LLM_THRESHOLD
 from pipeline.classify_llm import classify_with_llm, STATS as LLM_STATS, MODEL_USAGE
 
 TEXT_EXT = {".txt"}
 OFFICE_EXT = {".pdf", ".docx", ".xlsx"}
-LLM_THRESHOLD = 0.80      # LLM is called only below this rule confidence; all BL_COMPARISON branches are >= 0.80 and never call it
 
 
 def read_attachment(root: pathlib.Path, rel: str) -> tuple[str | None, str]:
@@ -40,12 +39,14 @@ def classify_attachments(root, atts):
     """Assign attachments to the SI / BL slots.
     Priority: filename tag (_SI. / _BL.) > content fingerprint (detect_doc_type) > both fail -> left in unassigned
     Returns (slots, unassigned): slots = {"SI": (doc, src) | None, "BL": ...}; unassigned = [(doc, src)]
-    doc is None when no text could be read (unreadable / missing)."""
+    doc is None when the file exists but no text could be read (unreadable)."""
     slots: dict[str, tuple | None] = {"SI": None, "BL": None}
     pending, unassigned = [], []
     for a in atts:
         base = os.path.basename(a).upper()
         text, src = read_attachment(root, a)
+        if src == "missing":                                   # referenced but not there: same as not attached
+            continue
         doc = parse_text_document(text) if text is not None else None
         tag = "SI" if "_SI." in base else "BL" if "_BL." in base else None
         if tag and slots[tag] is None:
@@ -67,8 +68,7 @@ def decide(email, root, *, details: dict | None = None) -> dict:
     atts = email.get("attachments", []) or []
     slots, unassigned = classify_attachments(root, atts)
     has_si, has_bl = slots["SI"] is not None, slots["BL"] is not None
-    si, si_src = slots["SI"] or (None, None)
-    bl, bl_src = slots["BL"] or (None, None)
+    si, bl = (slots["SI"] or (None, None))[0], (slots["BL"] or (None, None))[0]
     category, decided_by, conf = classify_email(email, has_si, has_bl)
     if details is not None:
         details["classification"] = {"rule_category": category, "rule_confidence": conf, "llm": None}
@@ -111,16 +111,8 @@ def decide(email, root, *, details: dict | None = None) -> dict:
         out.update(status="NEEDS_REVIEW", review_reason="missing_attachment")
         return out
 
-    if si is None or bl is None:                       # non-text: pdf/docx/xlsx
-        src = si_src if si is None else bl_src
-        if src in ("missing",):
-            out.update(status="NEEDS_REVIEW", review_reason="missing_attachment")
-        else:
-            # OCR / Vision LLM belongs here. Until wired, report unreadable honestly; never guess.
-            out.update(status="NEEDS_REVIEW", review_reason="unreadable")
-        return out
-
-    if not si.readable or not bl.readable:
+    if si is None or bl is None or not si.readable or not bl.readable:
+        # OCR / Vision LLM belongs here. Until wired, report unreadable honestly; never guess.
         out.update(status="NEEDS_REVIEW", review_reason="unreadable")
         return out
 

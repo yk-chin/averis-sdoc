@@ -8,3 +8,4 @@
 {"ts": "2026-09-19T14:34:07", "sha": "22795fb", "final_score": 1.0, "stage1_macro_f1": 1.0, "defect_f1": 1.0, "end_to_end": 1.0, "esc_precision": 1.0}
 {"ts": "2026-09-19T17:56:03", "sha": "3ebf80f", "final_score": 1.0, "stage1_macro_f1": 1.0, "defect_f1": 1.0, "end_to_end": 1.0, "esc_precision": 1.0}
 {"ts": "2026-09-19T17:58:46", "sha": "8928161", "final_score": 1.0, "stage1_macro_f1": 1.0, "defect_f1": 1.0, "end_to_end": 1.0, "esc_precision": 1.0}
+{"ts": "2026-09-19T18:02:51", "sha": "f82809a", "final_score": 1.0, "stage1_macro_f1": 1.0, "defect_f1": 1.0, "end_to_end": 1.0, "esc_precision": 1.0}

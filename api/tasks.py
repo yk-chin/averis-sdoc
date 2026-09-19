@@ -18,10 +18,10 @@ Failure injection for demos (never on by default):
   settings/chaos {enabled:true} every attempt raises ("simulated downstream outage")
 """
 from __future__ import annotations
-import json, os, pathlib, tempfile, threading, time, traceback
+import json, os, threading, time, traceback
 from typing import Callable, Optional
 
-from api.store import REPORTS, JOBS, DEAD_LETTER, SETTINGS, now
+from api.store import REPORTS, DEAD_LETTER, SETTINGS, now
 
 MAX_ATTEMPTS = 3
 INLINE_BACKOFF_S = (1.0, 2.0)                      # attempt 1 -> wait 1s -> attempt 2 -> wait 2s -> attempt 3
