@@ -37,24 +37,36 @@ def read_attachment(root: pathlib.Path, rel: str) -> tuple[str | None, str]:
 
 
 def classify_attachments(root, atts):
-    si = bl = None
-    si_src = bl_src = None
+    """把附件分配到 SI / BL 两个槽位。
+    优先级：文件名标记（_SI. / _BL.）> 内容指纹（detect_doc_type）> 都失败 → 留在 unassigned
+    返回 (slots, unassigned)：slots = {"SI": (doc, src) | None, "BL": ...}；unassigned = [(doc, src)]
+    doc 为 None 表示读不出文本（unreadable / missing）。"""
+    slots: dict[str, tuple | None] = {"SI": None, "BL": None}
+    pending, unassigned = [], []
     for a in atts:
         base = os.path.basename(a).upper()
         text, src = read_attachment(root, a)
-        if "_SI." in base:
-            si, si_src = (parse_text_document(text) if text is not None else None), src
-        elif "_BL." in base:
-            bl, bl_src = (parse_text_document(text) if text is not None else None), src
-    return si, si_src, bl, bl_src
+        doc = parse_text_document(text) if text is not None else None
+        tag = "SI" if "_SI." in base else "BL" if "_BL." in base else None
+        if tag and slots[tag] is None:
+            slots[tag] = (doc, src)
+        else:
+            pending.append((doc, src))
+    for doc, src in pending:                                   # 内容指纹兜底
+        kind = doc.doc_type if doc is not None else None
+        if kind in slots and slots[kind] is None:
+            slots[kind] = (doc, src)
+        else:
+            unassigned.append((doc, src))
+    return slots, unassigned
 
 
 def decide(email, root) -> dict:
     atts = email.get("attachments", []) or []
-    si, si_src, bl, bl_src = classify_attachments(root, atts)
-
-    has_si = any("_SI." in os.path.basename(a).upper() for a in atts)
-    has_bl = any("_BL." in os.path.basename(a).upper() for a in atts)
+    slots, unassigned = classify_attachments(root, atts)
+    has_si, has_bl = slots["SI"] is not None, slots["BL"] is not None
+    si, si_src = slots["SI"] or (None, None)
+    bl, bl_src = slots["BL"] or (None, None)
     category, decided_by, conf = classify_email(email, has_si, has_bl)
 
     # 规则优先、LLM 兜底：只在规则拿不准时调用；LLM 失败则保留规则结果
@@ -71,6 +83,11 @@ def decide(email, root) -> dict:
 
     # --- 可靠性闸门：按 official review_reason 的四种原因逐级判定 ---
     if not has_si or not has_bl:
+        # 有附件但既无文件名标记、内容也认不出是 SI/BL：读不出 → unreadable；读得出 → wrong_doc_type
+        if unassigned:
+            reason = "unreadable" if any(d is None for d, _ in unassigned) else "wrong_doc_type"
+            out.update(status="NEEDS_REVIEW", review_reason=reason)
+            return out
         # 两种"没附件"要分开：
         #   incomplete request —— 发件人以为文件已附上、要求比对（"compare the SI and draft BL"），
         #                         文件却没到 → NEEDS_REVIEW / missing_attachment，需要人去催

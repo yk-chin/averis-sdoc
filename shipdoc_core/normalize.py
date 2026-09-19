@@ -345,6 +345,20 @@ _LOCODE_NAME = {
     "USLAX": "LOS ANGELES",     "USNYC": "NEW YORK",
     "NLRTM": "ROTTERDAM",       "DEHAM": "HAMBURG",
     "AEJEA": "JEBEL ALI",       "GBFXT": "FELIXSTOWE",
+    # 2026-09-19 扩充：真实 UN/LOCODE（行业数据，非从数据集反推；数据集里 AUFRE→BUSAN 之类
+    # 的"错配"是主办方埋的缺陷，绝不能照抄进来）。Buatan 的 IDBUA 未能确认为官方代码，未收录。
+    "CNNTG": "NANTONG",         "PECLL": "CALLAO",
+    "PKKHI": "KARACHI",         "TRMER": "MERSIN",
+    "KEMBA": "MOMBASA",         "AUFRE": "FREMANTLE",
+    "GNCKY": "CONAKRY",         "LTKLJ": "KLAIPEDA",
+    "NGAPP": "APAPA",           "USSAV": "SAVANNAH",
+    "KRPTK": "PYEONGTAEK",      "MMRGN": "YANGON",
+    "USBAL": "BALTIMORE",       "AUBNE": "BRISBANE",
+    "USLGB": "LONG BEACH",      "ILASH": "ASHDOD",
+    "PLGDN": "GDANSK",          "CLVAP": "VALPARAISO",
+    "SIKOP": "KOPER",           "JOAQB": "AQABA",
+    "USHOU": "HOUSTON",         "PHCEB": "CEBU",
+    "INTUT": "TUTICORIN",
 }
 _NAME_LOCODE = {v: k for k, v in _LOCODE_NAME.items()}
 

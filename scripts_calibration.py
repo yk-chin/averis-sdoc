@@ -54,7 +54,11 @@ def collect(tree: pathlib.Path, data: pathlib.Path) -> dict:
         has_bl = any("_BL." in os.path.basename(a).upper() for a in atts)
         if not (has_si and has_bl):
             continue
-        si, _, bl, _ = classify_attachments(data, atts)
+        res = classify_attachments(data, atts)
+        if isinstance(res[0], dict):                       # 当前签名 (slots, unassigned)
+            si = (res[0]["SI"] or (None, None))[0]; bl = (res[0]["BL"] or (None, None))[0]
+        else:                                              # 基线签名 (si, src, bl, src)
+            si, _, bl, _ = res
         if si is None or bl is None or not si.readable or not bl.readable:
             continue
         if si.doc_type != "SI" or bl.doc_type != "BL":

@@ -133,7 +133,7 @@
   "desc": "港口：BL 只留 LOCODE（仅一致对）",
   "coverage": {
    "txt": [
-    88,
+    86,
     192
    ],
    "xlsx": [
@@ -148,13 +148,13 @@
     0,
     28
    ],
-   "lines_changed": 158
+   "lines_changed": 147
   },
-  "final_score": 0.6804964539007092,
+  "final_score": 1.0,
   "macro_f1": 1.0,
-  "defect_f1": 0.6524822695035462,
-  "field_f1": 0.6101694915254238,
-  "end_to_end": 0.5,
+  "defect_f1": 1.0,
+  "field_f1": 1.0,
+  "end_to_end": 1.0,
   "esc_precision": 1.0,
   "esc_recall": 1.0,
   "pred_review": 20
@@ -181,13 +181,13 @@
    "lines_changed": 0,
    "renamed": 250
   },
-  "final_score": 0.3,
+  "final_score": 1.0,
   "macro_f1": 1.0,
-  "defect_f1": 0.0,
-  "field_f1": 0.0,
-  "end_to_end": 0.0,
-  "esc_precision": 0.15503875968992248,
+  "defect_f1": 1.0,
+  "field_f1": 1.0,
+  "end_to_end": 1.0,
+  "esc_precision": 1.0,
   "esc_recall": 1.0,
-  "pred_review": 129
+  "pred_review": 20
  }
 }

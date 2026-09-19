@@ -93,3 +93,48 @@ def test_request_with_quoted_attachment_claim_still_not_expected():
 def test_ambiguous_body_defaults_to_escalate():
     # 既不索要也不声称附上：拿不准 → 上报（设计不变量）
     assert expects_attachments(_email("x", "Dear Team,\n\nKindly action. Thank you.")) is True
+
+
+# ---------------------------------------------------------------- R2：附件槽位分配（文件名 > 内容指纹 > 无法认定）
+from pipeline.run import classify_attachments
+
+SI_TXT = "SHIPPING INSTRUCTION\n====\nShipper: ABC CO LTD\nConsignee: XYZ\nPOL: SINGAPORE\n"
+BL_TXT = "BILL OF LADING (DRAFT)\n====\nShipper: ABC CO LTD\nConsignee: XYZ\nPort of Loading: SINGAPORE\n"
+
+
+def _write(tmp_path, name, text):
+    (tmp_path / "attachments").mkdir(exist_ok=True)
+    (tmp_path / "attachments" / name).write_text(text, encoding="utf-8")
+    return f"attachments/{name}"
+
+
+def test_untagged_attachments_are_assigned_by_content(tmp_path):
+    a = _write(tmp_path, "email_1_doc_a.txt", SI_TXT)
+    b = _write(tmp_path, "email_1_doc_b.txt", BL_TXT)
+    slots, unassigned = classify_attachments(tmp_path, [b, a])       # 顺序无关
+    assert slots["SI"][0].doc_type == "SI" and slots["BL"][0].doc_type == "BL"
+    assert unassigned == []
+
+
+def test_filename_tag_wins_over_content(tmp_path):
+    # 文件名说是 SI、内容是 BL：按文件名放进 SI 槽，让下游的 wrong_doc_type 闸门去报
+    a = _write(tmp_path, "email_2_SI.txt", BL_TXT)
+    b = _write(tmp_path, "email_2_BL.txt", BL_TXT)
+    slots, unassigned = classify_attachments(tmp_path, [a, b])
+    assert slots["SI"][0].doc_type == "BL" and unassigned == []
+
+
+def test_unidentifiable_attachment_stays_unassigned(tmp_path):
+    a = _write(tmp_path, "email_3_doc_a.txt", SI_TXT)
+    c = _write(tmp_path, "email_3_doc_c.txt", "PACKING LIST\nItem: paper\n")
+    slots, unassigned = classify_attachments(tmp_path, [a, c])
+    assert slots["SI"] is not None and slots["BL"] is None
+    assert len(unassigned) == 1 and unassigned[0][0].doc_type == "PACKING"
+
+
+# ---------------------------------------------------------------- R4：裸 LOCODE ↔ 港名
+def test_bare_locode_matches_port_name():
+    from shipdoc_core.normalize import normalize_port, ports_match
+    assert ports_match(normalize_port("MOMBASA, KENYA (KEMBA)"), normalize_port("KEMBA"))[0] is True
+    assert ports_match(normalize_port("FREMANTLE, AUSTRALIA"), normalize_port("AUFRE"))[0] is True
+    assert ports_match(normalize_port("BUSAN, SOUTH KOREA"), normalize_port("AUFRE"))[0] is False
