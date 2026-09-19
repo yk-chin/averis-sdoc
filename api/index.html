@@ -1,59 +1,339 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>ShipDoc API</title>
 <style>
- body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;margin:0;padding:16px;background:#f9f9f7;color:#0b0b0b;max-width:760px;margin:auto}
- h1{font-size:20px;margin:8px 0 4px}h2{font-size:16px;margin:26px 0 6px;border-top:1px solid #e1e0d9;padding-top:16px}small{color:#52514e}
- label{display:block;margin-top:12px;font-size:13px;color:#52514e}
- input,textarea{width:100%;box-sizing:border-box;padding:8px;border:1px solid #c3c2b7;border-radius:6px;font-size:14px;background:#fff}
- textarea{min-height:100px;font-family:inherit}
- button{margin-top:10px;margin-right:6px;padding:9px 14px;border:0;border-radius:6px;background:#2a78d6;color:#fff;font-size:14px;cursor:pointer}
- button.gray{background:#52514e}button.red{background:#d03b3b}button.sm{padding:5px 10px;font-size:12px;margin:0}
- button:disabled{opacity:.5}
- pre{background:#fff;border:1px solid #e1e0d9;border-radius:6px;padding:10px;font-size:12px;overflow:auto;white-space:pre-wrap;max-height:360px}
- .row{display:flex;gap:8px}.row>*{flex:1}
- .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;background:#e1e0d9;margin-right:6px;margin-top:4px}
- .ok{background:#d6f2d6}.warn{background:#fde3c8}.bad{background:#f8d0d0}.blue{background:#cde2fb}
- table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px;background:#fff}
- th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #e1e0d9;vertical-align:top}th{color:#52514e;font-weight:600}
- a{color:#2a78d6}
-</style></head><body>
-<h1>ShipDoc API <small id="ver"></small></h1>
-<small>Shipping-document intake: classify the email → parse the attached SI and draft BL → compare the seven key fields → escalate what a person must see.<br>
-<a href="/docs">OpenAPI docs</a> · <code>GET /health</code> · <code>POST /process</code> · <code>POST /batch</code> · <code>GET /failures</code></small>
-<p style="margin:10px 0 0;font-size:13px;color:#52514e"><b>No credentials needed</b> to process a single email (section 1) - just click. Only <b>batch processing</b> (section 2) and the <b>dead-letter queue</b> (section 3) need an API key, because one batch can consume the LLM quota.</p>
-<label>X-API-Key (batch, dead-letter queue and retry only; leave empty for single-email processing)</label><input id="key" placeholder="not needed for section 1">
+/* ---------------------------------------------------------------- fonts (self-hosted, OFL 1.1) */
+@font-face{font-family:"Source Sans 3";src:url(/static/fonts/SourceSans3VF-Upright.woff2) format("woff2");font-weight:200 900;font-style:normal;font-display:swap}
+@font-face{font-family:"Source Sans 3";src:url(/static/fonts/SourceSans3VF-Italic.woff2) format("woff2");font-weight:200 900;font-style:italic;font-display:swap}
 
-<h2>1 · Process one email (synchronous, no key needed)</h2>
-<div class="row"><div><label>email_id</label><input id="eid" value="demo-001"></div><div><label>from</label><input id="from" value="ops@example.com"></div></div>
-<label>subject</label><input id="subj" value="TO CONFIRM DOCS _ 5RSG-00133 _ CALLAO_PERU">
-<label>body</label><textarea id="body">Hi,
+/* ---------------------------------------------------------------- tokens
+   spacing  : Fibonacci-derived 4 / 8 / 12 / 16 / 24 / 32 / 48 / 64 / 96
+   type     : 12 / 14 / 16 / 18 / 20 / 24 / 32 / 40
+   corners  : one family 6 / 10 / 16 / 24, continuous curvature where the browser supports it
+   colour   : Apple system palette, hairlines instead of shadows                              */
+:root{
+  --s-1:4px;--s-2:8px;--s-3:12px;--s-4:16px;--s-6:24px;--s-8:32px;--s-12:48px;--s-16:64px;--s-24:96px;
+  --r-s:6px;--r-m:10px;--r-l:16px;--r-xl:24px;
+  --t-fast:150ms;--t-base:240ms;--t-slow:400ms;--ease:cubic-bezier(.2,.8,.2,1);
+  --bg:#f5f5f7;--card:#fff;--card-2:#f7f7f8;--line:rgba(0,0,0,.08);--line-2:rgba(0,0,0,.16);
+  --text:#1d1d1f;--text-2:#6e6e73;--text-3:#86868b;
+  --accent:#0071e3;--accent-2:#0077ed;--accent-tint:rgba(0,113,227,.10);--accent-text:#0066cc;
+  --ok:#34c759;--ok-tint:rgba(52,199,89,.13);--ok-text:#1f8a3b;
+  --warn:#ff9f0a;--warn-tint:rgba(255,159,10,.15);--warn-text:#a85d00;
+  --bad:#ff3b30;--bad-tint:rgba(255,59,48,.12);--bad-text:#c9210f;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.04);
+  --ring:0 0 0 3px rgba(0,113,227,.28);
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#000;--card:#1c1c1e;--card-2:#2c2c2e;--line:rgba(255,255,255,.12);--line-2:rgba(255,255,255,.24);
+  --text:#f5f5f7;--text-2:#98989d;--text-3:#6e6e73;
+  --accent:#0a84ff;--accent-2:#3395ff;--accent-tint:rgba(10,132,255,.18);--accent-text:#409cff;
+  --ok:#30d158;--ok-tint:rgba(48,209,88,.16);--ok-text:#30d158;
+  --warn:#ffd60a;--warn-tint:rgba(255,214,10,.14);--warn-text:#ffd60a;
+  --bad:#ff453a;--bad-tint:rgba(255,69,58,.16);--bad-text:#ff6961;
+  --shadow:0 1px 2px rgba(0,0,0,.5);--ring:0 0 0 3px rgba(10,132,255,.4);
+}}
+
+/* ---------------------------------------------------------------- base */
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font:400 16px/1.5 "Source Sans 3",-apple-system,"SF Pro Text",system-ui,sans-serif;
+  font-synthesis:none;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;font-feature-settings:"kern","liga"}
+.page{max-width:1024px;margin:0 auto;padding:0 var(--s-6)}
+h1,h2,h3,p{margin:0}
+h1{font-size:40px;line-height:1.15;font-weight:700;letter-spacing:-.02em}
+h2{font-size:20px;line-height:1.25;font-weight:600;letter-spacing:-.01em}
+a{color:var(--accent-text);text-decoration:none;border-radius:var(--r-s);transition:color var(--t-fast) var(--ease)}
+a:hover{text-decoration:underline;text-underline-offset:3px}
+a:focus-visible{outline:none;box-shadow:var(--ring)}
+code{font:500 13px/1 var(--mono);color:var(--text-2);background:var(--card-2);border:1px solid var(--line);border-radius:var(--r-s);padding:3px 6px}
+.meta{font-size:12px;line-height:1.5;color:var(--text-3)}
+.mono{font-family:var(--mono)}
+.lead{font-size:18px;line-height:1.5;color:var(--text-2);max-width:60ch}
+.muted{color:var(--text-2);font-size:14px;line-height:1.5}
+b{font-weight:600}
+.ic{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;vertical-align:-3px}
+.ic-lg{width:20px;height:20px;stroke-width:1.5}
+.ic-xl{width:24px;height:24px;stroke-width:1.5}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* ---------------------------------------------------------------- header + hero (φ split) */
+.header{display:flex;align-items:flex-end;justify-content:space-between;gap:var(--s-6);padding:var(--s-8) 0 0}
+.header nav{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s-2);font-size:14px}
+.header nav a{font-weight:500}
+#ver{display:block;margin-top:var(--s-2);font:400 12px/1.5 var(--mono);color:var(--text-3);min-height:18px}
+.hero{display:grid;grid-template-columns:1.618fr 1fr;gap:var(--s-8);align-items:start;padding:var(--s-12) 0 var(--s-16)}
+.hero .copy{display:flex;flex-direction:column;gap:var(--s-6)}
+
+/* ---------------------------------------------------------------- card */
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r-l);box-shadow:var(--shadow);padding:var(--s-6);
+  transition:border-color var(--t-fast) var(--ease)}
+.card:focus-within{border-color:color-mix(in srgb,var(--accent) 40%,transparent)}
+.card-head{display:flex;align-items:baseline;gap:var(--s-3);padding-bottom:var(--s-4);border-bottom:1px solid var(--line);margin-bottom:var(--s-6)}
+.num{font-size:24px;line-height:1;font-weight:300;color:var(--text-3);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.card-head .tag{margin-left:auto;font-size:14px;color:var(--text-3);white-space:nowrap}
+.card.cred{border-radius:var(--r-xl);padding:var(--s-6)}
+.cred-title{display:flex;align-items:center;gap:var(--s-2);font-size:14px;font-weight:600;color:var(--text)}
+.stack{display:flex;flex-direction:column;gap:var(--s-6)}
+.sections{display:flex;flex-direction:column;gap:var(--s-12)}
+.body-grid{display:flex;flex-direction:column;gap:var(--s-6)}
+
+/* ---------------------------------------------------------------- form controls */
+.field{display:flex;flex-direction:column;gap:var(--s-1)}
+.field>label,.label{font-size:14px;line-height:1.4;font-weight:500;color:var(--text-2)}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:var(--s-4)}
+.fields{display:flex;flex-direction:column;gap:var(--s-4)}
+input[type=text],input:not([type]),textarea{width:100%;font:inherit;font-size:16px;color:var(--text);background:var(--card);
+  border:1px solid var(--line-2);border-radius:var(--r-m);padding:0 var(--s-3);height:40px;
+  transition:border-color var(--t-fast) var(--ease),box-shadow var(--t-fast) var(--ease),background var(--t-fast) var(--ease)}
+textarea{height:auto;min-height:144px;padding:var(--s-2) var(--s-3);line-height:1.5;resize:vertical}
+input::placeholder,textarea::placeholder{color:var(--text-3)}
+input:hover,textarea:hover{border-color:color-mix(in srgb,var(--line-2) 100%,var(--text) 20%)}
+input:focus-visible,textarea:focus-visible{outline:none;border-color:var(--accent);box-shadow:var(--ring)}
+input:disabled,textarea:disabled{opacity:.45}
+input:read-only,textarea:read-only{background:var(--card-2)}
+input[aria-invalid=true],textarea[aria-invalid=true]{border-color:var(--bad);box-shadow:0 0 0 3px var(--bad-tint)}
+.drop{display:flex;align-items:center;gap:var(--s-3);padding:var(--s-3) var(--s-4);border:1px dashed var(--line-2);border-radius:var(--r-m);
+  background:var(--card-2);color:var(--text-2);font-size:14px;transition:border-color var(--t-fast) var(--ease)}
+.drop:hover{border-color:var(--accent)}
+.drop:focus-within{border-color:var(--accent);box-shadow:var(--ring)}
+.drop input[type=file]{flex:1;min-width:0;font:inherit;font-size:14px;color:var(--text)}
+.drop input[type=file]:focus-visible{outline:none}
+.drop input[type=file]::file-selector-button{font:inherit;font-size:14px;font-weight:500;color:var(--text);background:var(--card);border:1px solid var(--line-2);
+  border-radius:var(--r-s);padding:0 var(--s-3);height:32px;margin-right:var(--s-3);cursor:pointer;transition:background var(--t-fast) var(--ease)}
+.drop input[type=file]::file-selector-button:hover{background:var(--bg)}
+
+/* ---------------------------------------------------------------- buttons: default / hover / focus / active / disabled / loading */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--s-2);height:40px;padding:0 var(--s-4);margin:0;
+  font:500 16px/1 "Source Sans 3",-apple-system,system-ui,sans-serif;letter-spacing:-.005em;border-radius:var(--r-m);border:1px solid transparent;cursor:pointer;
+  white-space:nowrap;-webkit-tap-highlight-color:transparent;
+  transition:background var(--t-fast) var(--ease),border-color var(--t-fast) var(--ease),box-shadow var(--t-fast) var(--ease),transform 100ms var(--ease),opacity var(--t-fast) var(--ease)}
+.btn:focus-visible{outline:none;box-shadow:var(--ring)}
+.btn:active:not(:disabled){transform:scale(.98)}
+.btn:disabled{opacity:.45;cursor:default}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover:not(:disabled){background:var(--accent-2)}
+.btn-secondary{background:var(--accent-tint);color:var(--accent-text)}
+.btn-secondary:hover:not(:disabled){background:color-mix(in srgb,var(--accent-tint) 100%,var(--accent) 8%)}
+.btn-danger{background:var(--bad-tint);color:var(--bad-text)}
+.btn-danger:hover:not(:disabled){background:color-mix(in srgb,var(--bad-tint) 100%,var(--bad) 8%)}
+.btn-danger:focus-visible{box-shadow:0 0 0 3px var(--bad-tint)}
+.btn-sm{height:32px;padding:0 var(--s-3);font-size:14px;border-radius:var(--r-s)}
+.btn .spin{display:none;width:16px;height:16px;flex:none}
+.btn[aria-busy=true] .spin{display:block;animation:spin .9s linear infinite}
+.btn[aria-busy=true] .ic-go{display:none}
+.actions{display:flex;flex-wrap:wrap;gap:var(--s-3);align-items:center}
+.toolbar{display:flex;flex-wrap:wrap;gap:var(--s-4);align-items:center;justify-content:space-between}
+
+/* ---------------------------------------------------------------- switch (native checkbox kept for behaviour) */
+.switch{display:inline-flex;align-items:center;gap:var(--s-3);font-size:14px;font-weight:500;color:var(--text-2);cursor:pointer;position:relative;user-select:none}
+.switch input{position:absolute;opacity:0;width:1px;height:1px;margin:0}
+.switch .track{width:36px;height:22px;border-radius:11px;background:var(--line-2);position:relative;flex:none;transition:background var(--t-base) var(--ease)}
+.switch .track::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);transition:transform var(--t-base) var(--ease)}
+.switch input:checked+.track{background:var(--ok)}
+.switch input:checked+.track::after{transform:translateX(14px)}
+.switch input:focus-visible+.track{box-shadow:var(--ring)}
+.switch input:disabled+.track{opacity:.45}
+
+/* ---------------------------------------------------------------- chips (status), notes */
+.chips{display:flex;flex-wrap:wrap;gap:var(--s-2);min-height:0}
+.chips:empty{display:none}
+.chip{display:inline-flex;align-items:center;gap:var(--s-2);height:28px;padding:0 var(--s-3);border-radius:var(--r-s);font-size:14px;font-weight:500;
+  color:var(--text-2);background:var(--card-2);border:1px solid var(--line);animation:rise var(--t-fast) var(--ease)}
+.chip.ok,.chip.warn,.chip.bad,.chip.blue{border-color:transparent}
+.chip.ok::before,.chip.warn::before,.chip.bad::before,.chip.blue::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
+.chip.ok{background:var(--ok-tint);color:var(--ok-text)}
+.chip.warn{background:var(--warn-tint);color:var(--warn-text)}
+.chip.bad{background:var(--bad-tint);color:var(--bad-text)}
+.chip.blue{background:var(--accent-tint);color:var(--accent-text)}
+.why{width:100%;font-size:14px;color:var(--text-2);line-height:1.5}
+.note{display:flex;gap:var(--s-2);align-items:flex-start;padding:var(--s-3) var(--s-4);border-radius:var(--r-m);background:var(--accent-tint);color:var(--text);font-size:14px;line-height:1.5}
+.note .ic{margin-top:3px;color:var(--accent-text)}
+.hint{display:flex;gap:var(--s-2);align-items:flex-start;font-size:14px;line-height:1.5;color:var(--text-2)}
+.hint .ic{margin-top:3px;color:var(--text-3)}
+
+/* ---------------------------------------------------------------- output panels: empty / loading / success / error */
+pre{margin:0;background:var(--card-2);border:1px solid var(--line);border-radius:var(--r-m);padding:var(--s-4);
+  font:400 12px/1.45 var(--mono);color:var(--text);overflow:auto;white-space:pre-wrap;word-break:break-word;min-height:96px;max-height:420px;
+  transition:border-color var(--t-base) var(--ease)}
+pre.is-empty{color:var(--text-3);font-style:italic;font-family:"Source Sans 3",system-ui,sans-serif;font-size:14px}
+pre.is-error{border-color:var(--bad);border-left-width:3px}
+.result{display:flex;flex-direction:column;gap:var(--s-3)}
+
+/* ---------------------------------------------------------------- tables */
+.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:var(--r-m);background:var(--card)}
+table{width:100%;border-collapse:collapse;font-size:14px;line-height:1.4}
+th,td{text-align:left;padding:var(--s-3) var(--s-4);border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:0}
+th{font-weight:500;color:var(--text-2);background:var(--card-2);position:sticky;top:0;white-space:nowrap}
+tbody tr{transition:background var(--t-fast) var(--ease)}
+tbody tr:hover{background:var(--card-2)}
+td small,td .meta{font-size:12px;color:var(--text-3);line-height:1.45;word-break:break-word}
+td .mono{font-size:12px;color:var(--text-3)}
+td .btn+ .btn{margin-left:var(--s-2)}
+.cell-actions{white-space:nowrap}
+
+/* ---------------------------------------------------------------- footer */
+.footer{margin-top:var(--s-24);padding:var(--s-6) 0 var(--s-12);border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:var(--s-4);flex-wrap:wrap}
+
+/* ---------------------------------------------------------------- motion */
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.reveal{animation:rise var(--t-slow) var(--ease) both;animation-delay:calc(var(--i,0)*60ms)}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+  .btn[aria-busy=true] .spin{animation:none}
+}
+
+/* ---------------------------------------------------------------- continuous corners where supported (Chromium ≥ 139) */
+@supports (corner-shape:squircle){
+  .card,.btn,.chip,.note,.drop,pre,.table-wrap,input:not([type]),input[type=text],textarea,code{corner-shape:squircle}
+  .card{border-radius:calc(var(--r-l) * 1.25)}.card.cred{border-radius:calc(var(--r-xl) * 1.25)}
+}
+
+/* ---------------------------------------------------------------- responsive: one language, content-driven breakpoints */
+@media (max-width:899px){
+  .hero{grid-template-columns:1fr;padding:var(--s-8) 0 var(--s-12)}
+  .header{flex-direction:column;align-items:flex-start;gap:var(--s-4)}
+}
+@media (max-width:599px){
+  .page{padding:0 var(--s-4)}
+  h1{font-size:32px}
+  .card{padding:var(--s-4);border-radius:var(--r-l)}
+  .card-head{margin-bottom:var(--s-4);flex-wrap:wrap}
+  .card-head .tag{flex-basis:100%;margin:0;padding-left:calc(30px + var(--s-3))}
+  .row{grid-template-columns:1fr}
+  .sections{gap:var(--s-8)}
+  .btn{height:44px}.btn-sm{height:36px}
+  .actions .btn-primary{width:100%}
+  .hero{padding:var(--s-6) 0 var(--s-8)}
+  .footer{margin-top:var(--s-16)}
+}
+</style></head><body>
+
+<!-- Icon sprite: drawn on a 24-unit box to SF Symbols geometry (1.75 stroke at 16 px, 1.5 at 20/24 px, round caps and joins) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="ic-paperplane" viewBox="0 0 24 24"><path d="M21 3 3 10.5l7.5 3 3 7.5L21 3z"/><path d="M10.5 13.5 21 3"/></symbol>
+  <symbol id="ic-arrow-clockwise" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M18.36 2.5v3.14h3.14"/></symbol>
+  <symbol id="ic-doc-text" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6"/></symbol>
+  <symbol id="ic-paperclip" viewBox="0 0 24 24"><path d="M20.5 11.5 12 20a5.5 5.5 0 0 1-7.8-7.8l9.2-9.2a3.5 3.5 0 0 1 5 5l-9.2 9.2a1.5 1.5 0 0 1-2.1-2.1L15.5 7"/></symbol>
+  <symbol id="ic-checkmark-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 4.5-5"/></symbol>
+  <symbol id="ic-exclamationmark-triangle" viewBox="0 0 24 24"><path d="M12 3.5 2.5 19.5h19z"/><path d="M12 9.5v4.5M12 17h.01"/></symbol>
+  <symbol id="ic-xmark-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6m0-6-6 6"/></symbol>
+  <symbol id="ic-bolt" viewBox="0 0 24 24"><path d="M13 2 4.5 13.5H11L10 22l8.5-11.5H13z"/></symbol>
+  <symbol id="ic-bolt-slash" viewBox="0 0 24 24"><path d="M13 2 4.5 13.5H11L10 22l8.5-11.5H13z"/><path d="m3 3 18 18"/></symbol>
+  <symbol id="ic-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4.5"/><path d="m11.2 11.8 8.3-8.3M17 6l2.5 2.5M14.5 8.5 17 11"/></symbol>
+  <symbol id="ic-waveform" viewBox="0 0 24 24"><path d="M3 12h3l2.5-6 3.5 12 3-9 1.5 3H21"/></symbol>
+  <symbol id="ic-tray" viewBox="0 0 24 24"><path d="M3 13h5l1.5 3h5l1.5-3h5v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M5 13V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v7"/></symbol>
+  <symbol id="ic-info-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></symbol>
+  <symbol id="ic-spinner" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 1-6.36 2.64"/></symbol>
+</svg>
+
+<div class="page">
+
+<header class="header reveal" style="--i:0">
+  <div>
+    <h1>ShipDoc</h1>
+    <small id="ver"></small>
+  </div>
+  <nav aria-label="API">
+    <a href="/docs">OpenAPI docs</a>
+    <span class="meta" aria-hidden="true">·</span>
+    <code>GET /health</code> <code>POST /process</code> <code>POST /batch</code> <code>GET /failures</code>
+  </nav>
+</header>
+
+<section class="hero">
+  <div class="copy reveal" style="--i:1">
+    <p class="lead">Shipping-document intake: classify the email → parse the attached SI and draft BL → compare the seven key fields → escalate what a person must see.</p>
+    <p class="hint"><svg class="ic"><use href="#ic-info-circle"/></svg><span><b>No credentials needed</b> to process a single email (section 1) - just click. Only <b>batch processing</b> (section 2) and the <b>dead-letter queue</b> (section 3) need an API key, because one batch can consume the LLM quota.</span></p>
+  </div>
+  <div class="card cred reveal stack" style="--i:2">
+    <div class="cred-title"><svg class="ic-lg ic"><use href="#ic-key"/></svg>Credentials</div>
+    <div class="field">
+      <label for="key">X-API-Key</label>
+      <input id="key" placeholder="not needed for section 1" autocomplete="off" spellcheck="false">
+      <span class="meta">Batch, dead-letter queue and retry only; leave empty for single-email processing.</span>
+    </div>
+  </div>
+</section>
+
+<div class="sections">
+
+<!-- ---------------------------------------------------------------- 1 -->
+<section class="card reveal" style="--i:3" aria-labelledby="h-1">
+  <div class="card-head"><span class="num">01</span><h2 id="h-1">Process one email</h2><span class="tag">synchronous · no key needed</span></div>
+  <div class="body-grid">
+    <div class="fields">
+      <div class="row">
+        <div class="field"><label for="eid">email_id</label><input id="eid" value="demo-001" spellcheck="false"></div>
+        <div class="field"><label for="from">from</label><input id="from" value="ops@example.com" spellcheck="false"></div>
+      </div>
+      <div class="field"><label for="subj">subject</label><input id="subj" value="TO CONFIRM DOCS _ 5RSG-00133 _ CALLAO_PERU"></div>
+      <div class="field"><label for="body">body</label><textarea id="body">Hi,
 
 Attached are the SI and draft BL for OC 5RSG-00133. Please check the details and confirm.
 
-Best Regards</textarea>
-<label>attachments (SI / BL as .txt, .pdf, .docx or .xlsx — names with _SI / _BL are routed by name, otherwise by content)</label><input id="files" type="file" multiple>
-<button id="go">Process email</button> <button id="sample" class="gray">Use sample SI + BL (3 vs 4 containers)</button> <button id="hb" class="gray">Health check (deep)</button>
-<div id="sampleNote" style="display:none;font-size:12px;color:#52514e;margin-top:6px">Sample attachments loaded: an SI and a draft BL that disagree on the container count. Click <b>Process email</b>.</div>
-<div id="sum"></div>
-<pre id="out">Results will appear here.</pre>
+Best Regards</textarea></div>
+      <div class="field">
+        <span class="label">attachments</span>
+        <label class="drop" for="files"><svg class="ic-lg ic"><use href="#ic-paperclip"/></svg><input id="files" type="file" multiple></label>
+        <span class="meta">SI / BL as .txt, .pdf, .docx or .xlsx — names with _SI / _BL are routed by name, otherwise by content.</span>
+      </div>
+    </div>
+    <div class="actions">
+      <button id="go" class="btn btn-primary"><svg class="ic ic-go"><use href="#ic-paperplane"/></svg><svg class="ic spin"><use href="#ic-spinner"/></svg>Process email</button>
+      <button id="sample" class="btn btn-secondary"><svg class="ic"><use href="#ic-doc-text"/></svg>Use sample SI + BL (3 vs 4 containers)</button>
+      <button id="hb" class="btn btn-secondary"><svg class="ic"><use href="#ic-waveform"/></svg>Health check (deep)</button>
+    </div>
+    <div id="sampleNote" class="note" style="display:none"><svg class="ic"><use href="#ic-doc-text"/></svg><span>Sample attachments loaded: an SI and a draft BL that disagree on the container count. Click <b>Process email</b>.</span></div>
+    <div class="result">
+      <div id="sum" class="chips"></div>
+      <pre id="out" class="is-empty">Results will appear here.</pre>
+    </div>
+  </div>
+</section>
 
-<h2>2 · Batch with visible failures and retries (Cloud Tasks, API key required)</h2>
-<small>Each email becomes a task with up to <b>3 attempts</b> (exponential backoff). A third failure lands in the <b>dead-letter queue</b> with its reason and original input, from where it can be retried.
-The demo batch below sends one healthy email, one that fails twice then succeeds (<code>fail_times=2</code>), and one that fails every time (<code>fail_times=99</code>).</small>
-<div>
-<button id="bsend">Send demo batch</button>
-<button id="bdup" class="gray">Send the same batch again (idempotency)</button>
-<button id="chaosOn" class="red">Chaos ON (simulate outage)</button>
-<button id="chaosOff" class="gray">Chaos OFF</button>
+<!-- ---------------------------------------------------------------- 2 -->
+<section class="card reveal" style="--i:4" aria-labelledby="h-2">
+  <div class="card-head"><span class="num">02</span><h2 id="h-2">Batch with visible failures and retries</h2><span class="tag">Cloud Tasks · API key required</span></div>
+  <div class="body-grid">
+    <p class="muted">Each email becomes a task with up to <b>3 attempts</b> (exponential backoff). A third failure lands in the <b>dead-letter queue</b> with its reason and original input, from where it can be retried.
+    The demo batch below sends one healthy email, one that fails twice then succeeds (<code>fail_times=2</code>), and one that fails every time (<code>fail_times=99</code>).</p>
+    <div class="actions">
+      <button id="bsend" class="btn btn-primary"><svg class="ic"><use href="#ic-paperplane"/></svg>Send demo batch</button>
+      <button id="bdup" class="btn btn-secondary"><svg class="ic"><use href="#ic-arrow-clockwise"/></svg>Send the same batch again (idempotency)</button>
+      <button id="chaosOn" class="btn btn-danger"><svg class="ic"><use href="#ic-bolt"/></svg>Chaos ON (simulate outage)</button>
+      <button id="chaosOff" class="btn btn-secondary"><svg class="ic"><use href="#ic-bolt-slash"/></svg>Chaos OFF</button>
+    </div>
+    <div id="bsum" class="chips"></div>
+    <div class="table-wrap" id="btabWrap" style="display:none"><table id="btab"><thead><tr><th>email_id</th><th>status</th><th>attempts</th><th>category / result</th><th>error</th></tr></thead><tbody></tbody></table></div>
+  </div>
+</section>
+
+<!-- ---------------------------------------------------------------- 3 -->
+<section class="card reveal" style="--i:5" aria-labelledby="h-3">
+  <div class="card-head"><span class="num">03</span><h2 id="h-3">Dead-letter queue</h2><span class="tag">API key required</span></div>
+  <div class="body-grid">
+    <div class="toolbar">
+      <button id="frefresh" class="btn btn-secondary"><svg class="ic"><use href="#ic-arrow-clockwise"/></svg>Refresh</button>
+      <label class="switch"><input type="checkbox" id="fall"><span class="track"></span><span>show recovered too</span></label>
+    </div>
+    <div class="table-wrap"><table id="ftab"><thead><tr><th>email_id</th><th>status</th><th>attempts</th><th>reason</th><th></th></tr></thead><tbody><tr><td colspan="5"><small>No failures loaded yet.</small></td></tr></tbody></table></div>
+    <pre id="fout" style="display:none"></pre>
+  </div>
+</section>
+
 </div>
-<div id="bsum"></div>
-<table id="btab" style="display:none"><thead><tr><th>email_id</th><th>status</th><th>attempts</th><th>category / result</th><th>error</th></tr></thead><tbody></tbody></table>
 
-<h2>3 · Dead-letter queue</h2>
-<button id="frefresh" class="gray">Refresh</button> <label style="display:inline"><input type="checkbox" id="fall" style="width:auto"> show recovered too</label>
-<table id="ftab"><thead><tr><th>email_id</th><th>status</th><th>attempts</th><th>reason</th><th></th></tr></thead><tbody><tr><td colspan="5"><small>No failures loaded yet.</small></td></tr></tbody></table>
-<pre id="fout" style="display:none"></pre>
+<footer class="footer meta">
+  <span>ShipDoc · Averis × Monash Hackathon 2026</span>
+  <span>Source Sans 3 · SIL Open Font License 1.1</span>
+</footer>
+
+</div>
 
 <script>
 const $=id=>document.getElementById(id);
@@ -70,22 +350,22 @@ $('files').onchange=()=>{sampleAtts=null;$('sampleNote').style.display='none'};
 
 // ---- 1. single email
 $('go').onclick=async()=>{
-  $('go').disabled=true;$('out').textContent='Processing…';$('sum').innerHTML='';
+  $('go').disabled=true;$('go').setAttribute('aria-busy','true');$('out').className='';$('out').textContent='Processing…';$('sum').innerHTML='';
   try{
     const atts=sampleAtts?[...sampleAtts]:[];for(const f of $('files').files){atts.push({name:f.name,content_base64:await b64(f)})}
     const payload={email_id:$('eid').value,from:$('from').value,subject:$('subj').value,body:$('body').value,attachments:atts};
     const r=await fetch('/process',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const j=await r.json();
     if(r.ok){const d=j.decision;
-      $('sum').innerHTML=`<span class="pill">${d.category}</span><span class="pill ${cls(d.status)}">${d.status}</span>`
-        +(d.review_reason?`<span class="pill warn">reason: ${d.review_reason}</span>`:'')
-        +(d.defect_fields.length?`<span class="pill bad">defects: ${d.defect_fields.join(', ')}</span>`:'')
-        +`<span class="pill">decided by ${d.decided_by}</span><span class="pill">${j.elapsed_ms} ms</span>`
-        +((j.review_detail||[]).length?`<div style="font-size:12px;color:#52514e;margin-top:4px">why: ${j.review_detail.join(' · ')}</div>`:'');
+      $('sum').innerHTML=`<span class="chip">${d.category}</span><span class="chip ${cls(d.status)}">${d.status}</span>`
+        +(d.review_reason?`<span class="chip warn">reason: ${d.review_reason}</span>`:'')
+        +(d.defect_fields.length?`<span class="chip bad">defects: ${d.defect_fields.join(', ')}</span>`:'')
+        +`<span class="chip">decided by ${d.decided_by}</span><span class="chip">${j.elapsed_ms} ms</span>`
+        +((j.review_detail||[]).length?`<div class="why">why: ${j.review_detail.join(' · ')}</div>`:'');
       $('out').textContent=(j.evidence.report_text?j.evidence.report_text+'\n\n':'')+JSON.stringify(j,null,2);}
-    else $('out').textContent='HTTP '+r.status+'\n'+JSON.stringify(j,null,2);
-  }catch(e){$('out').textContent='ERROR '+e}
-  $('go').disabled=false;};
-$('hb').onclick=async()=>{$('out').textContent='Checking…';const r=await fetch('/health?deep=1');$('out').textContent=JSON.stringify(await r.json(),null,2)};
+    else {$('out').className='is-error';$('out').textContent='HTTP '+r.status+'\n'+JSON.stringify(j,null,2);}
+  }catch(e){$('out').className='is-error';$('out').textContent='ERROR '+e}
+  $('go').disabled=false;$('go').removeAttribute('aria-busy');};
+$('hb').onclick=async()=>{$('out').className='';$('out').textContent='Checking…';const r=await fetch('/health?deep=1');$('out').textContent=JSON.stringify(await r.json(),null,2)};
 
 // ---- 2. demo batch
 const body="Hi,\n\nAttached are the SI and draft BL for OC 5RSG-00133. Please check the details and confirm.\n\nBest Regards";
@@ -94,22 +374,22 @@ let batchId=null,poll=null;
 async function sendBatch(){
   const stamp=new Date().toISOString().slice(11,19).replace(/:/g,'');
   const emails=[mk('healthy-'+stamp),mk('flaky-'+stamp,{fail_times:2}),mk('broken-'+stamp,{fail_times:99})];
-  $('bsum').innerHTML='Submitting…';
+  $('bsum').innerHTML='<span class="chip">Submitting…</span>';
   const r=await fetch('/batch',{method:'POST',headers:hdr(),body:JSON.stringify({emails})});const j=await r.json();
-  if(!r.ok){$('bsum').textContent='HTTP '+r.status+' '+JSON.stringify(j);return}
+  if(!r.ok){$('bsum').innerHTML=`<span class="chip bad">HTTP ${r.status}</span><span class="why">${JSON.stringify(j)}</span>`;return}
   batchId=j.batch_id;window._lastBatch=emails;
-  $('bsum').innerHTML=`<span class="pill">${j.batch_id}</span><span class="pill blue">queued ${j.queued}</span><span class="pill">duplicates ${j.duplicates}</span><span class="pill">mode ${j.mode}</span>`;
+  $('bsum').innerHTML=`<span class="chip mono">${j.batch_id}</span><span class="chip blue">queued ${j.queued}</span><span class="chip">duplicates ${j.duplicates}</span><span class="chip">mode ${j.mode}</span>`;
   startPoll();
 }
 $('bsend').onclick=sendBatch;
 $('bdup').onclick=async()=>{ if(!window._lastBatch){await sendBatch();return}
   const r=await fetch('/batch',{method:'POST',headers:hdr(),body:JSON.stringify({emails:window._lastBatch})});const j=await r.json();
-  $('bsum').innerHTML+=`<br><span class="pill">${j.batch_id}</span><span class="pill blue">queued ${j.queued}</span><span class="pill warn">duplicates ${j.duplicates} — nothing re-processed</span>`;};
+  $('bsum').innerHTML+=`<span class="chip mono">${j.batch_id}</span><span class="chip blue">queued ${j.queued}</span><span class="chip warn">duplicates ${j.duplicates} — nothing re-processed</span>`;};
 function startPoll(){clearInterval(poll);poll=setInterval(refreshBatch,1500);refreshBatch()}
 async function refreshBatch(){
   if(!batchId)return;const s=await (await fetch('/batch/'+batchId)).json();
-  const tb=$('btab').querySelector('tbody');tb.innerHTML='';$('btab').style.display='';
-  for(const it of s.items){tb.insertAdjacentHTML('beforeend',`<tr><td>${it.email_id}</td><td><span class="pill ${cls(it.status)}">${it.status}</span></td><td>${it.attempts??''}</td><td>${it.category?it.category+' / '+it.decision_status:''}</td><td><small>${it.error||''}</small></td></tr>`)}
+  const tb=$('btab').querySelector('tbody');tb.innerHTML='';$('btabWrap').style.display='';
+  for(const it of s.items){tb.insertAdjacentHTML('beforeend',`<tr><td>${it.email_id}</td><td><span class="chip ${cls(it.status)}">${it.status}</span></td><td>${it.attempts??''}</td><td>${it.category?it.category+' / '+it.decision_status:''}</td><td><small>${it.error||''}</small></td></tr>`)}
   if(s.pending===0){clearInterval(poll);refreshFailures()}
 }
 $('chaosOn').onclick=async()=>{await fetch('/admin/chaos?enabled=true',{method:'POST',headers:hdr()});$('ver').textContent+=' · CHAOS ON'};
@@ -120,7 +400,7 @@ async function refreshFailures(){
   const r0=await fetch('/failures'+($('fall').checked?'?all=1':''),{headers:hdr()});if(r0.status===401){$('ftab').querySelector('tbody').innerHTML='<tr><td colspan="5"><small>Dead-letter queue needs the API key (enter it above).</small></td></tr>';return}const f=await r0.json();
   const tb=$('ftab').querySelector('tbody');tb.innerHTML='';
   if(!f.items.length){tb.innerHTML='<tr><td colspan="5"><small>Dead-letter queue is empty.</small></td></tr>';return}
-  for(const it of f.items){tb.insertAdjacentHTML('beforeend',`<tr><td>${it.email_id}<br><small>${it.id}</small></td><td><span class="pill ${cls(it.status)}">${it.status}</span></td><td>${it.attempts}</td><td><small>${it.reason||''}</small></td><td>${it.status==='FAILED'?`<button class="sm" onclick="retryOne('${it.id}')">Retry</button>`:''} <button class="sm gray" onclick="showOne('${it.id}')">Details</button></td></tr>`)}
+  for(const it of f.items){tb.insertAdjacentHTML('beforeend',`<tr><td>${it.email_id}<br><span class="mono">${it.id}</span></td><td><span class="chip ${cls(it.status)}">${it.status}</span></td><td>${it.attempts}</td><td><small>${it.reason||''}</small></td><td class="cell-actions">${it.status==='FAILED'?`<button class="btn btn-sm btn-primary" onclick="retryOne('${it.id}')">Retry</button>`:''} <button class="btn btn-sm btn-secondary" onclick="showOne('${it.id}')">Details</button></td></tr>`)}
 }
 window.retryOne=async key=>{const r=await fetch('/failures/'+key+'/retry',{method:'POST',headers:hdr()});const j=await r.json();
   $('fout').style.display='';$('fout').textContent=JSON.stringify(j,null,2);

@@ -18,7 +18,8 @@ Service: `https://shipdoc-api-705106212012.asia-southeast1.run.app`　Project: `
 
 | | Auth | Description |
 |---|---|---|
-| `GET /` | - | Test page, works on a phone |
+| `GET /` | - | Demo page, works on a phone |
+| `GET /static/*` | - | Self-hosted Source Sans 3 (`api/static/fonts/`, OFL 1.1) for the demo page |
 | `GET /health` | - | Liveness and auth summary; no project id, model chain or internal counters. `?deep=1` makes one real LLM call |
 | `POST /process` | - (rate-limited: `RATE_LIMIT_PER_MIN`, default 10, per client IP) | One email -> `decision` (the submission record) + `evidence` (rule/LLM classification basis, parsed attachments, the seven `FieldResult`s, readable report) |
 | `POST /batch` | X-API-Key | `{"emails":[...]}`, <= 200. One Cloud Tasks task per email; returns `batch_id` immediately. Same email (email_id + content hash) already queued/done -> `duplicate`, not re-processed |

@@ -100,7 +100,8 @@ Other evaluation scripts:
 
 | Endpoint | Auth | Description |
 |---|---|---|
-| `GET /` | — | Test page (works on a phone) |
+| `GET /` | — | Demo page (works on a phone) |
+| `GET /static/*` | — | Self-hosted Source Sans 3 for the demo page (OFL 1.1) |
 | `GET /health` | — | Liveness; `?deep=1` makes one real LLM call |
 | `POST /process` | — (rate-limited per IP) | One email → `decision` + `evidence` (classification basis, parsed attachments, seven `FieldResult`s, readable report) |
 | `POST /batch` | `X-API-Key` | Up to 200 emails, one Cloud Tasks task each (3 attempts, exponential backoff); duplicates by email_id + content hash are skipped |

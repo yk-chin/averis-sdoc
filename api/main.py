@@ -35,6 +35,7 @@ from typing import Any, Literal, Optional
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -57,6 +58,7 @@ app = FastAPI(title="ShipDoc API", version=APP_VERSION,
               description="Shipping-document intake: classify the email, parse the attached SI and draft BL, "
                           "compare the seven key fields deterministically, and escalate what a person must see. "
                           "Batches run through Cloud Tasks with 3 retries and a visible dead-letter queue.")
+app.mount("/static", StaticFiles(directory=str(ROOT / "api" / "static")), name="static")   # fonts for the demo page
 
 store = make_store()
 _started = time.time()
