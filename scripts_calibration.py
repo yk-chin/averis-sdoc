@@ -202,10 +202,15 @@ def plot_progress(history: list[dict], path: pathlib.Path):
         txt = f"all {len(labels)} = {y:.3f}" if len(labels) == len(keys) else f"{', '.join(labels)} {y:.3f}"
         ax.text(xs[-1] + 0.08, y, txt, va="center", fontsize=8.5, color=INK2)
     # label the final score directly on each run
+    # label a run only when its final score changed from the previous run; tick labels thinned to stay legible
+    prev = None
     for x, h in zip(xs, history):
-        ax.text(x, h["final_score"] + 0.035, f"{h['final_score']:.3f}", ha="center", fontsize=8.5, color=INK)
-    ax.set_xticks(xs)
-    ax.set_xticklabels([f"run {i}\n{h['ts'][5:16].replace('T', ' ')}\n{h['sha']}" for i, h in zip(xs, history)],
+        if prev is None or abs(h["final_score"] - prev) > 1e-9:
+            ax.text(x, h["final_score"] + 0.035, f"{h['final_score']:.3f}", ha="center", fontsize=8.5, color=INK)
+        prev = h["final_score"]
+    step = max(1, (len(xs) + 7) // 8)
+    ax.set_xticks(xs[::step])
+    ax.set_xticklabels([f"run {i}\n{h['ts'][5:16].replace('T', ' ')}\n{h['sha']}" for i, h in list(zip(xs, history))[::step]],
                        fontsize=8)
     ax.set_ylim(0, 1.06); ax.set_xlim(0.7, len(xs) + 1.4)
     ax.set_ylabel("score", color=MUTED, fontsize=9)
