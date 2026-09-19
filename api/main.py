@@ -306,7 +306,11 @@ def reports(limit: int = 1000, category: Optional[str] = None, status: Optional[
             review_reason: Optional[str] = None, prefix: Optional[str] = None):
     """Filters run in Python after one ordered read so no composite index is needed; 520 emails is small."""
     limit = max(1, min(limit, 1000))
-    rows = [_report_row(r) for r in store.list(REPORTS, limit=limit)]
+    rows, seen = [], set()
+    for r in store.list(REPORTS, limit=limit):        # newest first: keep one row per email_id (a re-sent
+        if r.get("email_id") in seen:                 # email with changed content gets a new key)
+            continue
+        seen.add(r.get("email_id")); rows.append(_report_row(r))
     if prefix:                                        # e.g. prefix=email_ keeps demo-page rows out of the inbox
         rows = [r for r in rows if (r["email_id"] or "").startswith(prefix)]
     if category:
