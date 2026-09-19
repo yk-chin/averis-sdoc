@@ -68,12 +68,19 @@ def _collapse_initials(s: str) -> str:
     return re.sub(r"\b(?:[A-Z]\.){2,}", lambda m: m.group(0).replace(".", ""), s)
 
 
+# 代理/转交限定语：其后是代理方而非法人主体本身。
+#   "APRIL FINE PAPER TRADING | ON BEHALF OF VITAL SOLUTIONS PTE LTD" 的主体是 APRIL，
+#   若不先切掉，后缀搜索会命中代理方的 PTE LTD，把整段当成主体 → 假警报。
+_AGENT_QUALIFIER = re.compile(r"\b(ON\s+BEHALF\s+OF|O/B|C/O|CARE\s+OF|AS\s+AGENTS?\s+(?:FOR|OF))\b", re.I)
+
+
 def normalize_party(raw: str, *, keep_address: bool = False) -> str:
     """
     公司名规范化。默认只保留法人主体（截到公司后缀为止），因为 SI 与 BL 的
     地址排版差异极大，把地址纳入比对是假警报的头号来源。
 
     主体提取策略（后缀感知，优于简单按逗号切）：
+      0. 先取 "|" 之前的名称行，并切掉 ON BEHALF OF / C/O 之后的代理方
       1. 若找到公司后缀（LTD / SDN BHD / KK ...），主体 = 开头 → 后缀结束
       2. 找不到后缀，才退回按换行 / 逗号取第一段
     keep_address=True 时保留全文，用于人工复核界面展示原文。
@@ -85,6 +92,10 @@ def normalize_party(raw: str, *, keep_address: bool = False) -> str:
 
     suffix_hit = None
     if not keep_address:
+        s = re.split(r"\s*\|\s*", s)[0]                 # 名称行；"|" 之后是地址续行
+        m = _AGENT_QUALIFIER.search(s)
+        if m and m.start() > 0:
+            s = s[: m.start()]
         for key in _CORP_KEYS:
             pattern = r"\b" + r"[\s.,]*".join(map(re.escape, key.split())) + r"\b\.?"
             m = re.search(pattern, s)
@@ -122,7 +133,11 @@ _ISO2 = {
     "ZA","EG","NZ","CA","RU","KH","MM","NP","QA","OM","KW","GR","PT","SE","NO",
     "DK","FI","IE","AT","CH","CZ","HU","RO","UA","IL","JO","LB","MA","NG","KE",
 }
-_UNLOCODE_RE = re.compile(r"\b([A-Z]{2}[A-Z0-9]{3})\b")
+# 只认括号里的代码 "(MYPKG)"，或裸露但在已知表里的代码。
+# ⚠️ 不能用"任意 5 个大写字母 + 合法国家码前缀"：INDIA(IN) / KENYA(KE) / RUGAO(RU) /
+#    BEACH(BE) 都会通过校验，把国名当成代码 → 比对结果靠运气。
+_UNLOCODE_PAREN_RE = re.compile(r"\(\s*([A-Z]{2}[A-Z0-9]{3})\s*\)")
+_UNLOCODE_BARE_RE = re.compile(r"\b([A-Z]{2}[A-Z0-9]{3})\b")
 
 
 def _is_unlocode(tok: str) -> bool:
@@ -140,6 +155,8 @@ _PORT_SYNONYM = {
     "PTP": "PORT OF TANJUNG PELEPAS",
     "HONGKONG": "HONG KONG",
     "HO CHI MINH": "HO CHI MINH CITY",
+    "HOCHIMINH": "HO CHI MINH CITY",
+    "HOCHIMINH CITY": "HO CHI MINH CITY",
     "SAIGON": "HO CHI MINH CITY",
     "BOMBAY": "MUMBAI",
     "MADRAS": "CHENNAI",
@@ -172,17 +189,28 @@ def normalize_port(raw: str) -> PortValue:
         return PortValue("", None)
 
     code = None
-    for m in _UNLOCODE_RE.finditer(s):
-        tok = m.group(1)
-        if _is_unlocode(tok):
-            code = tok
-            s = (s[: m.start()] + " " + s[m.end():])
-            break
+    m = _UNLOCODE_PAREN_RE.search(s)                 # 首选：括号里的代码
+    if m and _is_unlocode(m.group(1)):
+        code = m.group(1)
+        s = s[: m.start()] + " " + s[m.end():]
+    else:                                            # 其次：裸露但在已知表里
+        for m in _UNLOCODE_BARE_RE.finditer(s):
+            if m.group(1) in _LOCODE_NAME:
+                code = m.group(1)
+                s = s[: m.start()] + " " + s[m.end():]
+                break
 
     s = re.sub(r"[()\[\]]", " ", s)
+    # 去国家：优先按已知国名尾巴；否则 "CITY, COUNTRY" 形式去掉最后一个逗号段
     stripped_tail = _COUNTRY_TAIL.sub("", s).strip()
-    if stripped_tail:            # 城邦国家(SINGAPORE/HONG KONG)本身即港名，不可删空
+    if stripped_tail and stripped_tail != s.strip():
         s = stripped_tail
+    else:
+        segs = [p.strip() for p in s.split(",") if p.strip()]
+        if len(segs) >= 2:
+            s = ", ".join(segs[:-1])
+    if not s.strip() and code is None:   # 城邦国家(SINGAPORE/HONG KONG)本身即港名，不可删空
+        s = basic_clean(raw).upper()     # （纯代码 "MYPKG" 抽走后名字为空是正常的，不兜底）
     s = re.sub(r"[^\w\s]", " ", s)
     s = re.sub(r"\s+", " ", s).strip()
     s = _PORT_SYNONYM.get(s, s)
@@ -321,24 +349,44 @@ _LOCODE_NAME = {
 _NAME_LOCODE = {v: k for k, v in _LOCODE_NAME.items()}
 
 
+def _port_names_equivalent(na: str, nb: str) -> bool:
+    """港名等价：完全相同，或一方的词集包含另一方（"PORT KLANG WESTPORT" ⊇ "PORT KLANG"）。"""
+    if na == nb:
+        return True
+    ta, tb = set(na.split()), set(nb.split())
+    return bool(ta) and bool(tb) and (ta <= tb or tb <= ta)
+
+
 def ports_match(a: PortValue, b: PortValue) -> tuple[bool | None, str]:
     """
     分层比对两个港口值。
 
     返回 (结果, 理由)
       True  相同    False 不同    None 无法判定 → 必须交人工，不许猜
+
+    ⚠️ 港名优先于代码。真实缺陷是"港名改了、括号里的代码没改"
+       （SI "FREMANTLE (AUFRE)" vs BL "BUSAN (AUFRE)"）——若只比代码会漏掉。
+       两边都有名字时以名字为准；名字一致但代码不一致，同样是单据内部矛盾 → 不同。
+       代码只在一方没有名字时用来跨形态匹配（"SGSIN" vs "SINGAPORE"）。
     """
     if not (a.name or a.unlocode) or not (b.name or b.unlocode):
         return None, "one side empty"
 
-    ca = a.unlocode or _NAME_LOCODE.get(a.name)
-    cb = b.unlocode or _NAME_LOCODE.get(b.name)
-    if ca and cb:
-        return ca == cb, f"unlocode {ca} vs {cb}"
-
     na = a.name or _LOCODE_NAME.get(a.unlocode or "", "")
     nb = b.name or _LOCODE_NAME.get(b.unlocode or "", "")
+    ca = a.unlocode or _NAME_LOCODE.get(a.name)
+    cb = b.unlocode or _NAME_LOCODE.get(b.name)
+
     if na and nb:
-        return na == nb, f"name {na} vs {nb}"
+        if _port_names_equivalent(na, nb):
+            if ca and cb and ca != cb:
+                return False, f"name {na} same but unlocode {ca} vs {cb}"
+            return True, f"name {na}"
+        if ca and cb and ca == cb:
+            return False, f"unlocode {ca} same but names differ: {na} vs {nb}"
+        return False, f"name {na} vs {nb}"
+
+    if ca and cb:
+        return ca == cb, f"unlocode {ca} vs {cb}"
 
     return None, "unmapped locode, cannot compare"

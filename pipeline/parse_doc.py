@@ -39,6 +39,22 @@ BLANK = re.compile(r"^[\s_?\-.]*$|^(N\.?/?A\.?|TBA|TBD|PENDING|XXX+)$", re.I)
 #    解法：标签位置放行"除冒号外的任意字符"，CJK 交给 _norm_label 统一剔除。
 LABEL_LINE = re.compile(r"^\s*([A-Za-z][^:\n]{0,60}?)\s*:\s*(.*)$")
 
+# PDF 文本抽取的字符交错伪影（数据集中出现 3 次）：
+#   原文 "Notify Party/Intermediate Consignee: CERIEX" 被抽成
+#   "Notify: Party/Intermediate ConsCigEnReIEeX" —— 标签尾巴 "ignee" 与值 "CERIEX" 逐字交错。
+#   规律：单据的值全为大写，交错进来的标签残片是小写 → 去掉小写字母即还原真实值。
+INTERLEAVED_LABEL = re.compile(r"^Party/Intermediate\s+Cons(?P<rest>\S.*)$")
+
+
+def _deinterleave(value: str) -> str:
+    m = INTERLEAVED_LABEL.match(value)
+    if not m:
+        return value
+    rest = m.group("rest")
+    if not re.search(r"[a-z]", rest) or not re.search(r"[A-Z]", rest):
+        return value
+    return re.sub(r"\s+", " ", re.sub(r"[a-z]", "", rest)).strip()
+
 
 @dataclass
 class ParsedDoc:
@@ -75,7 +91,7 @@ def parse_text_document(text: str) -> ParsedDoc:
         m = LABEL_LINE.match(line)
         if not m:
             continue
-        raw_label, raw_value = m.group(1).strip(), m.group(2).strip()
+        raw_label, raw_value = m.group(1).strip(), _deinterleave(m.group(2).strip())
         key, is_near = resolve_label(raw_label)
         if key is None:
             continue
