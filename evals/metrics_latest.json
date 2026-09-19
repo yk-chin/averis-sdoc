@@ -1,0 +1,106 @@
+{
+ "ts": "2026-09-19T18:41:57",
+ "sha": "838e49f",
+ "scores": {
+  "ts": "2026-09-19T18:41:57",
+  "sha": "838e49f",
+  "final_score": 1.0,
+  "stage1_macro_f1": 1.0,
+  "defect_f1": 1.0,
+  "end_to_end": 1.0,
+  "esc_precision": 1.0
+ },
+ "classification": {
+  "accuracy": 1.0,
+  "macro_f1": 1.0,
+  "per_class": {
+   "BL_COMPARISON": {
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "tp": 220,
+    "fp": 0,
+    "fn": 0
+   },
+   "GENERAL": {
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "tp": 60,
+    "fp": 0,
+    "fn": 0
+   },
+   "INVOICE_QUERY": {
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "tp": 75,
+    "fp": 0,
+    "fn": 0
+   },
+   "SI_REQUEST": {
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "tp": 125,
+    "fp": 0,
+    "fn": 0
+   },
+   "SPAM": {
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "tp": 40,
+    "fp": 0,
+    "fn": 0
+   }
+  },
+  "confusion": {
+   "BL_COMPARISON": {
+    "BL_COMPARISON": 220,
+    "GENERAL": 0,
+    "INVOICE_QUERY": 0,
+    "SI_REQUEST": 0,
+    "SPAM": 0
+   },
+   "GENERAL": {
+    "BL_COMPARISON": 0,
+    "GENERAL": 60,
+    "INVOICE_QUERY": 0,
+    "SI_REQUEST": 0,
+    "SPAM": 0
+   },
+   "INVOICE_QUERY": {
+    "BL_COMPARISON": 0,
+    "GENERAL": 0,
+    "INVOICE_QUERY": 75,
+    "SI_REQUEST": 0,
+    "SPAM": 0
+   },
+   "SI_REQUEST": {
+    "BL_COMPARISON": 0,
+    "GENERAL": 0,
+    "INVOICE_QUERY": 0,
+    "SI_REQUEST": 125,
+    "SPAM": 0
+   },
+   "SPAM": {
+    "BL_COMPARISON": 0,
+    "GENERAL": 0,
+    "INVOICE_QUERY": 0,
+    "SI_REQUEST": 0,
+    "SPAM": 40
+   }
+  }
+ },
+ "field_level": {
+  "n_emails": 11,
+  "n_gold_defect_fields": 15,
+  "precision": 1.0,
+  "recall": 1.0,
+  "f1": 1.0,
+  "tp": 15,
+  "fp": 0,
+  "fn": 0
+ }
+}

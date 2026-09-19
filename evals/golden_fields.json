@@ -1,0 +1,15 @@
+{
+  "_provenance": "Hand-annotated on 2026-09-19 by reading the SI and draft-BL attachments of each email (data/attachments). NOT derived from ground_truth.json, which is never read. Used only for the field-level PRF printed by scripts_eval.py; the sample size is reported alongside the numbers.",
+  "_fields": ["shipper", "consignee", "notify_party", "port_of_loading", "port_of_discharge", "container_count", "gross_weight_kg"],
+  "email_025": ["container_count", "port_of_discharge"],
+  "email_031": ["container_count", "gross_weight_kg"],
+  "email_051": [],
+  "email_055": [],
+  "email_071": ["container_count", "port_of_discharge"],
+  "email_097": ["container_count", "gross_weight_kg"],
+  "email_128": ["gross_weight_kg", "port_of_loading"],
+  "email_145": ["shipper"],
+  "email_208": [],
+  "email_256": ["port_of_discharge", "shipper"],
+  "email_300": ["notify_party", "shipper"]
+}
