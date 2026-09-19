@@ -208,7 +208,7 @@ pre.body{font-family:inherit;font-size:15px;line-height:1.55}
 .val .norm.same .ic{color:var(--text-3)}
 .pop .same{color:var(--text-2);font-weight:400}
 
-.pop{position:fixed;z-index:20;width:min(360px,calc(100vw - 32px));padding:var(--s-4);border-radius:var(--r-l);background:var(--card);border:1px solid var(--line);box-shadow:var(--shadow-pop);
+.pop{position:absolute;z-index:20;width:min(360px,calc(100vw - 32px));padding:var(--s-4);border-radius:var(--r-l);background:var(--card);border:1px solid var(--line);box-shadow:var(--shadow-pop);
   font-size:14px;line-height:1.5;animation:rise var(--t-fast) var(--ease)}
 .pop .pair{display:grid;grid-template-columns:auto 1fr;gap:var(--s-1) var(--s-3);align-items:baseline}
 .pop .pair .k{font-size:12px;color:var(--text-3);white-space:nowrap}

@@ -34,15 +34,15 @@ export function Board({ fields }: { fields: FieldResult[] }) {
     };
     document.addEventListener("keydown", close);
     document.addEventListener("pointerdown", close);
-    window.addEventListener("scroll", () => setPop(null), { once: true, passive: true });
     return () => { document.removeEventListener("keydown", close); document.removeEventListener("pointerdown", close); };
   }, [pop]);
 
   const open = (r: FieldResult, side: "SI" | "BL", el: HTMLElement) => {
     const b = el.getBoundingClientRect();
     const below = b.bottom + 220 < window.innerHeight;
-    setPop({ r, side, x: Math.min(Math.max(16, b.left), window.innerWidth - 16 - Math.min(360, window.innerWidth - 32)),
-             y: below ? b.bottom + 8 : b.top - 8, below });
+    const w = Math.min(360, window.innerWidth - 32);                       // document coordinates: the card scrolls with the page
+    setPop({ r, side, x: window.scrollX + Math.min(Math.max(16, b.left), window.innerWidth - 16 - w),
+             y: window.scrollY + (below ? b.bottom + 8 : b.top - 8), below });
   };
 
   const Value = ({ r, side }: { r: FieldResult; side: "SI" | "BL" }) => {
@@ -57,7 +57,7 @@ export function Board({ fields }: { fields: FieldResult[] }) {
         aria-label={`${side} ${r.label}: ${fmtRaw(raw)}, normalised ${fmtNorm(r.field, norm)}`}>
         <span className="raw">{fmtRaw(raw)}</span>
         {raw !== null && norm === raw
-          ? <span className="norm same"><Icon name="equal.circle" />identical, compared as text</span>
+          ? <span className="norm same"><Icon name="equal.circle" />unchanged by normalisation</span>
           : <span className="norm"><Icon name="arrow.right" />{fmtNorm(r.field, norm)}</span>}
       </button>
     );
@@ -117,7 +117,7 @@ function PopBody({ r, side }: { r: FieldResult; side: "SI" | "BL" }) {
       <div className="meta" style={{ marginBottom: "var(--s-2)" }}>{side === "SI" ? "Shipping Instruction" : "Draft BL"} · {r.label}</div>
       <div className="pair">
         <span className="k">raw</span><span className="raw">{fmtRaw(raw)}</span>
-        <span className="k">normalised</span><span className="norm">{raw !== null && norm === raw ? <span className="same">identical, compared as text</span> : fmtNorm(r.field, norm)}</span>
+        <span className="k">normalised</span><span className="norm">{raw !== null && norm === raw ? <span className="same">unchanged by normalisation</span> : fmtNorm(r.field, norm)}</span>
       </div>
       <div className="arrow"><Icon name="arrow.right" />compared with {otherSide}</div>
       <div className="pair">
