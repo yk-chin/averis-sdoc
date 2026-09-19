@@ -210,3 +210,16 @@ def test_llm_cache_key_includes_attachment_names():
     with_si = dict(base, attachments=["attachments/e_SI.txt"])
     assert _cache_key(base) != _cache_key(with_si)                      # attachment names are part of the prompt
     assert _cache_key(dict(base, attachments=["x/b_BL.txt", "x/a_SI.txt"])) == _cache_key(dict(base, attachments=["x/a_SI.txt", "x/b_BL.txt"]))  # order-insensitive
+
+
+# ---------------------------------------------------------------- F4: the no-attachment comparison branch is final by design
+def test_no_attachment_comparison_branch_never_calls_the_llm(monkeypatch, tmp_path):
+    from pipeline import classify as c, run as runmod
+    e = _email("x", "Dear Najiha,\n\nPlease assist to send the draft BL for 070500236763 for checking asap." + SIG)
+    cat, _, conf = c.classify_email(e, False, False)
+    assert cat == "BL_COMPARISON" and conf == c.LLM_THRESHOLD           # exactly the threshold ...
+    def boom(_):
+        raise AssertionError("LLM must not be called for this branch")
+    monkeypatch.setattr(runmod, "classify_with_llm", boom)
+    out = decide(dict(e, email_id="f4"), tmp_path)                       # ... and `<` keeps it out of the LLM
+    assert out["category"] == "BL_COMPARISON" and out["decided_by"] == "rule"

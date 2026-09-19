@@ -87,7 +87,11 @@ def classify_email(email: dict, has_si: bool, has_bl: bool) -> tuple[str, str, f
         return "BL_COMPARISON", "rule", 0.85
 
     if COMPARE_PAT.search(text):
-        return "BL_COMPARISON", "rule", 0.80      # comparison request with attachments missing
+        # Comparison request without attachments. Returns exactly LLM_THRESHOLD, and run.py tests
+        # `conf < LLM_THRESHOLD`, so this branch is DELIBERATELY FINAL and never goes to the LLM:
+        # on v2 it covers 96 emails at precision/recall 1.0; an LLM round-trip would add cost and a
+        # failure surface for no gain. Lower this value below LLM_THRESHOLD if that decision changes.
+        return "BL_COMPARISON", "rule", LLM_THRESHOLD
     # The three branches below measured low precision (INVOICE_PAT is hit by "3 Original invoice" inside an SI
     # and by "Billing Process" in RPA notices); confidence is kept < 0.8 so the LLM reviews them
     if SI_REQUEST_PAT.search(text):

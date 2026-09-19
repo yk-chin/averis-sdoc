@@ -17,3 +17,5 @@
 {"ts": "2026-09-19T22:28:45", "sha": "c028e69", "final_score": 1.0, "stage1_macro_f1": 1.0, "defect_f1": 1.0, "end_to_end": 1.0, "esc_precision": 1.0}
 {"ts": "2026-09-19T22:30:48", "sha": "8565993", "final_score": 0.8723194745588716, "stage1_macro_f1": 0.574398248529572, "defect_f1": 1.0, "end_to_end": 1.0, "esc_precision": 1.0}
 {"ts": "2026-09-19T22:41:34", "sha": "8565993", "final_score": 1.0, "stage1_macro_f1": 1.0, "defect_f1": 1.0, "end_to_end": 1.0, "esc_precision": 1.0}
+{"ts": "2026-09-19T22:42:21", "sha": "c7ee579", "final_score": 1.0, "stage1_macro_f1": 1.0, "defect_f1": 1.0, "end_to_end": 1.0, "esc_precision": 1.0}
+{"ts": "2026-09-19T22:44:02", "sha": "c6b176d", "final_score": 1.0, "stage1_macro_f1": 1.0, "defect_f1": 1.0, "end_to_end": 1.0, "esc_precision": 1.0}
