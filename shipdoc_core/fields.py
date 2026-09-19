@@ -178,11 +178,18 @@ def resolve_label(raw_label: str) -> tuple[str | None, bool]:
                                      must not be used as the field; hand to a human
       - (None, False)               unrecognised
     """
+    key, near, _ = resolve_label_conf(raw_label)
+    return key, near
+
+
+def resolve_label_conf(raw_label: str) -> tuple[str | None, bool, float]:
+    """resolve_label plus how sure the match is - the extraction confidence handed to the comparator:
+    exact alias 1.0; alias after stripping a qualifier or bracket 0.95; fuzzy fallback = its ratio (>= 0.86)."""
     n = _norm_label(raw_label)
     if n in _ALIAS_INDEX:
-        return _ALIAS_INDEX[n], False
+        return _ALIAS_INDEX[n], False, 1.0
     if n in _NEAR_MISS_INDEX:
-        return _NEAR_MISS_INDEX[n], True
+        return _NEAR_MISS_INDEX[n], True, 1.0
 
     # Fallback 1: strip leading qualifiers. Real PDFs say "TOTAL Gross Wt (kgs):";
     #             adding aliases one by one never ends, stripping qualifiers is more general.
@@ -190,18 +197,18 @@ def resolve_label(raw_label: str) -> tuple[str | None, bool]:
         if n.startswith(q + " "):
             rest = n[len(q) + 1:].strip()
             if rest in _ALIAS_INDEX:
-                return _ALIAS_INDEX[rest], False
+                return _ALIAS_INDEX[rest], False, 0.95
             if rest in _NEAR_MISS_INDEX:
-                return _NEAR_MISS_INDEX[rest], True
+                return _NEAR_MISS_INDEX[rest], True, 0.95
             n = rest
             break
 
     # Fallback 2: drop the parenthesised remark and try again
     stripped = n.split("(")[0].strip()
     if stripped and stripped in _ALIAS_INDEX:
-        return _ALIAS_INDEX[stripped], False
+        return _ALIAS_INDEX[stripped], False, 0.95
     if stripped and stripped in _NEAR_MISS_INDEX:
-        return _NEAR_MISS_INDEX[stripped], True
+        return _NEAR_MISS_INDEX[stripped], True, 0.95
 
     # Fallback 3: fuzzy match. PDF extraction turns CJK into garbage
     #             ("Gross Weight毛重(KGS)" -> "Gross Weightnn(KGS)"), which no alias list can cover.
@@ -210,11 +217,11 @@ def resolve_label(raw_label: str) -> tuple[str | None, bool]:
     return _fuzzy_resolve(n)
 
 
-def _fuzzy_resolve(n: str, threshold: float = 0.86) -> tuple[str | None, bool]:
+def _fuzzy_resolve(n: str, threshold: float = 0.86) -> tuple[str | None, bool, float]:
     best_key, best_near, best_ratio = None, False, 0.0
     for index, is_near in ((_NEAR_MISS_INDEX, True), (_ALIAS_INDEX, False)):
         for alias, key in index.items():
             r = SequenceMatcher(None, n, alias).ratio()
             if r > best_ratio:
                 best_key, best_near, best_ratio = key, is_near, r
-    return (best_key, best_near) if best_ratio >= threshold else (None, False)
+    return (best_key, best_near, round(best_ratio, 3)) if best_ratio >= threshold else (None, False, 0.0)

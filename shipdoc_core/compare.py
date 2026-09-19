@@ -121,9 +121,8 @@ def compare_field(
         if r >= PARTY_FUZZY_HIGH:
             return mk(Outcome.NORMALIZED_MATCH, a, b,
                       f"highly similar ({r:.2f}), treated as the same party", round(r, 3))
-        if r <= PARTY_FUZZY_LOW:
-            return mk(Outcome.MISMATCH, a, b,
-                      f"different party (similarity {r:.2f})", round(1 - r, 3))
+        if r <= PARTY_FUZZY_LOW:                       # clearly different: a confident verdict, like the other kinds
+            return mk(Outcome.MISMATCH, a, b, f"different party (similarity {r:.2f})", 0.95)
         return mk(Outcome.UNDETERMINED, a, b,
                   f"similarity {r:.2f} is in the grey zone, needs a human", round(r, 3))
 
@@ -212,10 +211,12 @@ def compare_documents(
     Compare the SI and BL attached to one email.
 
     si / bl: {field_key: value} - produced by the extraction layer (LLM/OCR) and schema-validated
-    review_threshold: fields whose confidence falls below it are flagged needs_review in the report.
-                      Note: `confidence` on a MISMATCH is 1 - similarity, i.e. a distance, not a
-                      calibrated probability; the pipeline (run.py) escalates on UNDETERMINED only and
-                      does not use this threshold. scripts_calibration.py measures the real trade-off.
+    review_threshold: a field verdict whose confidence (comparison confidence capped by the extraction
+                      confidences si_conf / bl_conf from the parser) falls below it is flagged, and
+                      needs_human_review then turns the email into NEEDS_REVIEW in run.py. Verdict
+                      confidences are fixed per outcome kind (clear mismatch 0.95-0.99, normalised match
+                      0.97-0.99, grey zone / unparseable 0.2-0.3); scripts_calibration.py measures how
+                      well they track correctness.
     """
     si_conf, bl_conf = si_conf or {}, bl_conf or {}
     results = [

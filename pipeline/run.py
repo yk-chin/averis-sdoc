@@ -7,7 +7,7 @@ import json, os, sys, pathlib, collections
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-from shipdoc_core.compare import compare_documents, Outcome
+from shipdoc_core.compare import compare_documents
 from shipdoc_core.fields import FIELD_KEYS
 from pipeline.parse_doc import parse_text_document
 from pipeline.parse_office import office_to_text
@@ -70,6 +70,7 @@ def decide(email, root, *, details: dict | None = None) -> dict:
     has_si, has_bl = slots["SI"] is not None, slots["BL"] is not None
     si, bl = (slots["SI"] or (None, None))[0], (slots["BL"] or (None, None))[0]
     category, decided_by, conf = classify_email(email, has_si, has_bl)
+    classification_confidence = conf
     if details is not None:
         details["classification"] = {"rule_category": category, "rule_confidence": conf, "llm": None}
         details["attachments"] = {
@@ -83,9 +84,11 @@ def decide(email, root, *, details: dict | None = None) -> dict:
     if conf < LLM_THRESHOLD:
         llm = classify_with_llm(email)
         if llm is not None:
-            category, decided_by = llm.category, "llm"
+            category, decided_by, classification_confidence = llm.category, "llm", llm.confidence
             if details is not None:
                 details["classification"]["llm"] = llm.model_dump()
+    if details is not None:
+        details["classification"]["confidence"] = classification_confidence
 
     out = {"category": category, "status": "OK", "review_reason": None,
            "has_defect": False, "defect_fields": [], "decided_by": decided_by}
@@ -125,13 +128,17 @@ def decide(email, root, *, details: dict | None = None) -> dict:
         out.update(status="NEEDS_REVIEW", review_reason="missing_value")
         return out
 
-    # --- Deterministic comparison ---
-    rep = compare_documents(email["email_id"], si.fields, bl.fields)
+    # --- Deterministic comparison, with the extraction confidences from the parser ---
+    rep = compare_documents(email["email_id"], si.fields, bl.fields,
+                            si_conf=si.confidence, bl_conf=bl.confidence)
     if details is not None:
         details["fields"] = [r.to_dict() for r in rep.results]
         details["report_text"] = rep.render()
-    undetermined = [r.field for r in rep.results if r.outcome is Outcome.UNDETERMINED]
-    if undetermined:
+        details["decision_confidence"] = round(min(classification_confidence, rep.min_confidence), 4)
+        details["review_reasons"] = rep.review_reasons
+    # The comparator asks for a human on UNDETERMINED / missing fields, or when a field verdict's
+    # confidence (extraction x comparison) falls below its review threshold.
+    if rep.needs_human_review:
         out.update(status="NEEDS_REVIEW", review_reason="missing_value")
         return out
 

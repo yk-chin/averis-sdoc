@@ -138,3 +138,47 @@ def test_bare_locode_matches_port_name():
     assert ports_match(normalize_port("MOMBASA, KENYA (KEMBA)"), normalize_port("KEMBA"))[0] is True
     assert ports_match(normalize_port("FREMANTLE, AUSTRALIA"), normalize_port("AUFRE"))[0] is True
     assert ports_match(normalize_port("BUSAN, SOUTH KOREA"), normalize_port("AUFRE"))[0] is False
+
+
+# ---------------------------------------------------------------- routing layer: extraction confidence -> comparator -> status
+from shipdoc_core.fields import resolve_label_conf
+from pipeline.parse_doc import parse_text_document
+from pipeline.run import decide
+
+
+def test_label_match_confidence_reflects_how_the_label_matched():
+    assert resolve_label_conf("Port of Loading") == ("port_of_loading", False, 1.0)      # exact alias
+    assert resolve_label_conf("TOTAL Gross Wt (kgs)")[2] == 0.95                          # qualifier stripped
+    key, near, conf = resolve_label_conf("TOTAL Gross Weightnn(KGS)")                   # fuzzy fallback
+    assert key == "gross_weight_kg" and not near and 0.86 <= conf < 1.0
+    assert resolve_label_conf("Vessel Name") == (None, False, 0.0)
+
+
+def test_parsed_doc_carries_per_field_confidence():
+    doc = parse_text_document("SHIPPING INSTRUCTION\nShipper: ABC\nConsignee:\nXYZ LLC\n"
+                              "Notify: Party/Intermediate ConsCigEnReIEeX\nTOTAL Gross Weightnn(KGS): 100 KG\n")
+    assert doc.confidence["shipper"] == 1.0
+    assert doc.confidence["consignee"] == 0.9                       # value came from the next line
+    assert doc.confidence["notify_party"] == 0.7                    # recovered from the interleave artefact
+    assert 0.86 <= doc.confidence["gross_weight_kg"] < 1.0          # fuzzy label
+
+
+def test_low_extraction_confidence_routes_to_human(tmp_path):
+    si = "SHIPPING INSTRUCTION\nShipper: ABC CO LTD\nConsignee: XYZ LLC\nNotify: XYZ LLC\nPOL: SINGAPORE\nPOD: PORT KLANG\nContainer Count: 3\nGross Weight: 22000 KG\n"
+    bl = si.replace("SHIPPING INSTRUCTION", "BILL OF LADING (DRAFT)")
+    (tmp_path / "attachments").mkdir()
+    (tmp_path / "attachments" / "e_SI.txt").write_text(si, encoding="utf-8")
+    (tmp_path / "attachments" / "e_BL.txt").write_text(bl, encoding="utf-8")
+    email = {"email_id": "e", "subject": "TO CONFIRM DOCS", "body": "Attached are the SI and draft BL. Please check the details and confirm.",
+             "attachments": ["attachments/e_SI.txt", "attachments/e_BL.txt"]}
+    assert decide(email, tmp_path)["status"] == "OK"                # clean documents: OK
+    from pipeline import run as runmod
+    orig = runmod.parse_text_document
+    def low_conf(text):                                             # simulate an OCR/LLM extraction that is unsure
+        d = orig(text); d.confidence["shipper"] = 0.3; return d
+    runmod.parse_text_document = low_conf
+    try:
+        out = decide(email, tmp_path)
+    finally:
+        runmod.parse_text_document = orig
+    assert out["status"] == "NEEDS_REVIEW" and out["review_reason"] == "missing_value"

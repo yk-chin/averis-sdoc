@@ -16,7 +16,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from shipdoc_core.fields import resolve_label
+from shipdoc_core.fields import resolve_label_conf
 
 # Document-type fingerprints (found in the first few lines)
 # Order is priority. In real data an SI is headed "BILL OF LADING INSTRUCTION" / "BL INSTRUCTION",
@@ -61,6 +61,7 @@ def _deinterleave(value: str) -> str:
 class ParsedDoc:
     doc_type: str                       # SI | BL | INVOICE | PACKING | COO | UNKNOWN
     fields: dict = field(default_factory=dict)          # {field_key: value | None}; None = label present, value blank
+    confidence: dict = field(default_factory=dict)      # {field_key: 0-1}; how sure the extraction of that value is
     readable: bool = True
 
 
@@ -93,15 +94,19 @@ def parse_text_document(text: str) -> ParsedDoc:
         if not m:
             continue
         raw_label, raw_value = m.group(1).strip(), m.group(2).strip()
+        key, is_near, conf = resolve_label_conf(raw_label)   # conf: how the label matched (exact / stripped / fuzzy)
+        if key is None or is_near:                    # unknown label, or a trap label (not adopted)
+            continue
         if not raw_value and i + 1 < len(lines):
             nxt = lines[i + 1].strip()
             if nxt and not LABEL_LINE.match(nxt):
-                raw_value = nxt
-        raw_value = _deinterleave(raw_value)
-        key, is_near = resolve_label(raw_label)
-        if key is None or is_near:                    # unknown label, or a trap label (not adopted)
-            continue
-        doc.fields.setdefault(key, None if BLANK.match(raw_value) else raw_value)   # first occurrence wins
+                raw_value, conf = nxt, min(conf, 0.9)     # value taken from the next line
+        fixed = _deinterleave(raw_value)
+        if fixed != raw_value:
+            raw_value, conf = fixed, min(conf, 0.7)       # value recovered from an extraction artefact
+        if key not in doc.fields:                     # first occurrence wins
+            doc.fields[key] = None if BLANK.match(raw_value) else raw_value
+            doc.confidence[key] = conf
 
     if doc.doc_type in ("SI", "BL") and not doc.fields:
         doc.readable = False
