@@ -150,8 +150,8 @@ def _process_email(email: dict) -> dict:
         e = _materialise(email, root)
         details: dict = {}
         decision = decide(e, root, details=details)
-    return {"email_id": e["email_id"], "decision": decision, "evidence": details,
-            "elapsed_ms": round((time.time() - t0) * 1000), "version": APP_VERSION}
+    return {"email_id": e["email_id"], "decision": decision, "review_detail": details.get("review_detail", []),
+            "evidence": details, "elapsed_ms": round((time.time() - t0) * 1000), "version": APP_VERSION}
 
 
 def _ctx(request: Request) -> taskmod.TaskContext:

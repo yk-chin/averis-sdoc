@@ -79,7 +79,8 @@ $('go').onclick=async()=>{
       $('sum').innerHTML=`<span class="pill">${d.category}</span><span class="pill ${cls(d.status)}">${d.status}</span>`
         +(d.review_reason?`<span class="pill warn">reason: ${d.review_reason}</span>`:'')
         +(d.defect_fields.length?`<span class="pill bad">defects: ${d.defect_fields.join(', ')}</span>`:'')
-        +`<span class="pill">decided by ${d.decided_by}</span><span class="pill">${j.elapsed_ms} ms</span>`;
+        +`<span class="pill">decided by ${d.decided_by}</span><span class="pill">${j.elapsed_ms} ms</span>`
+        +((j.review_detail||[]).length?`<div style="font-size:12px;color:#52514e;margin-top:4px">why: ${j.review_detail.join(' · ')}</div>`:'');
       $('out').textContent=(j.evidence.report_text?j.evidence.report_text+'\n\n':'')+JSON.stringify(j,null,2);}
     else $('out').textContent='HTTP '+r.status+'\n'+JSON.stringify(j,null,2);
   }catch(e){$('out').textContent='ERROR '+e}

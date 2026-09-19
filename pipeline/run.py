@@ -93,6 +93,14 @@ def decide(email, root, *, details: dict | None = None) -> dict:
     out = {"category": category, "status": "OK", "review_reason": None,
            "has_defect": False, "defect_fields": [], "decided_by": decided_by}
 
+    def escalate(reason: str, *detail: str) -> dict:
+        """review_reason is the organiser's four-value enum (never extended); the concrete cause goes
+        to details["review_detail"] for /report and the UI. Mapping: docs/REVIEW_REASONS.md."""
+        out.update(status="NEEDS_REVIEW", review_reason=reason)
+        if details is not None:
+            details["review_detail"] = list(detail)
+        return out
+
     if category != "BL_COMPARISON":
         return out
 
@@ -100,9 +108,10 @@ def decide(email, root, *, details: dict | None = None) -> dict:
     if not has_si or not has_bl:
         # Attachments present but neither the filename tag nor the content identifies SI/BL: unreadable if no text, else wrong_doc_type
         if unassigned:
-            reason = "unreadable" if any(d is None for d, _ in unassigned) else "wrong_doc_type"
-            out.update(status="NEEDS_REVIEW", review_reason=reason)
-            return out
+            if any(d is None for d, _ in unassigned):
+                return escalate("unreadable", "an attachment exists but no text could be read from it")
+            return escalate("wrong_doc_type", "attachments present but none is recognised as an SI or a BL "
+                            f"(found: {', '.join(sorted(set(d.doc_type for d, _ in unassigned)))})")
         # Two kinds of "no attachment" must be told apart:
         #   incomplete request - the sender believes the files are attached and asks to compare
         #                        ("compare the SI and draft BL") but they never arrived
@@ -111,22 +120,23 @@ def decide(email, root, *, details: dict | None = None) -> dict:
         #                        there is nothing to compare yet -> OK, not a failed comparison
         if not expects_attachments(email):
             return out
-        out.update(status="NEEDS_REVIEW", review_reason="missing_attachment")
-        return out
+        return escalate("missing_attachment",
+                        f"body asks for a comparison but {'SI' if not has_si else 'BL'} is not attached"
+                        if has_si or has_bl else "body asks for a comparison but neither SI nor BL is attached")
 
     if si is None or bl is None or not si.readable or not bl.readable:
-        # OCR / Vision LLM belongs here. Until wired, report unreadable honestly; never guess.
-        out.update(status="NEEDS_REVIEW", review_reason="unreadable")
-        return out
+        # No text could be parsed from the file (empty, garbled, or an image-only PDF). Reported honestly; never guessed.
+        which = "SI" if (si is None or not si.readable) else "BL"
+        return escalate("unreadable", f"{which} attachment could not be parsed (empty, garbled or image-only)")
 
     if si.doc_type != "SI" or bl.doc_type != "BL":
-        out.update(status="NEEDS_REVIEW", review_reason="wrong_doc_type")
-        return out
+        return escalate("wrong_doc_type",
+                        f"attachment tagged SI is a {si.doc_type}" if si.doc_type != "SI" else f"attachment tagged BL is a {bl.doc_type}")
 
     missing = [k for k in FIELD_KEYS if si.fields.get(k) is None or bl.fields.get(k) is None]
     if missing:
-        out.update(status="NEEDS_REVIEW", review_reason="missing_value")
-        return out
+        blank = [f"{k} ({'SI' if si.fields.get(k) is None else 'BL'})" for k in missing]
+        return escalate("missing_value", f"field blank or placeholder: {', '.join(blank)}")
 
     # --- Deterministic comparison, with the extraction confidences from the parser ---
     rep = compare_documents(email["email_id"], si.fields, bl.fields,
@@ -139,8 +149,7 @@ def decide(email, root, *, details: dict | None = None) -> dict:
     # The comparator asks for a human on UNDETERMINED / missing fields, or when a field verdict's
     # confidence (extraction x comparison) falls below its review threshold.
     if rep.needs_human_review:
-        out.update(status="NEEDS_REVIEW", review_reason="missing_value")
-        return out
+        return escalate("missing_value", *rep.review_reasons)   # true cause: grey zone / undecidable / low confidence
 
     if rep.mismatched_fields:
         out.update(status="MISMATCH", has_defect=True,

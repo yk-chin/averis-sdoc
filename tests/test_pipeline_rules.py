@@ -182,3 +182,22 @@ def test_low_extraction_confidence_routes_to_human(tmp_path):
     finally:
         runmod.parse_text_document = orig
     assert out["status"] == "NEEDS_REVIEW" and out["review_reason"] == "missing_value"
+
+
+# ---------------------------------------------------------------- F1: review_reason stays official, review_detail tells the truth
+def test_review_detail_carries_the_true_cause(tmp_path):
+    si = "SHIPPING INSTRUCTION\nShipper: GLOBAL PAPER TRADING CO LTD\nConsignee: XYZ LLC\nNotify: XYZ LLC\nPOL: SINGAPORE\nPOD: PORT KLANG\nContainer Count: 3\nGross Weight: 22000 KG\n"
+    bl = si.replace("SHIPPING INSTRUCTION", "BILL OF LADING (DRAFT)").replace("GLOBAL PAPER TRADING CO LTD", "GLOBAL PAPER TRADERS CO LTD")  # similarity 0.889: grey zone
+    (tmp_path / "attachments").mkdir()
+    (tmp_path / "attachments" / "g_SI.txt").write_text(si, encoding="utf-8")
+    (tmp_path / "attachments" / "g_BL.txt").write_text(bl, encoding="utf-8")
+    email = {"email_id": "g", "subject": "TO CONFIRM DOCS", "body": "Attached are the SI and draft BL. Please check the details and confirm.",
+             "attachments": ["attachments/g_SI.txt", "attachments/g_BL.txt"]}
+    details = {}
+    out = decide(email, tmp_path, details=details)
+    assert out["status"] == "NEEDS_REVIEW" and out["review_reason"] == "missing_value"   # official enum only
+    assert any("grey zone" in d for d in details["review_detail"])                           # the real cause
+    # a missing attachment carries its own detail
+    details = {}
+    out = decide({"email_id": "m", "subject": "x", "body": "Please compare the SI and draft BL and confirm.", "attachments": []}, tmp_path, details=details)
+    assert out["review_reason"] == "missing_attachment" and "neither SI nor BL" in details["review_detail"][0]
