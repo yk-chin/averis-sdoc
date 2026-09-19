@@ -148,3 +148,32 @@ def test_tasks_endpoint_rejects_unauthenticated_calls_when_protected(monkeypatch
     assert r.status_code == 401
     r = client.post("/tasks/process", json={"key": "k", "email": _email()}, headers={"X-API-Key": "secret"})
     assert r.status_code == 200 and r.json()["status"] == "done"
+
+
+# ---------------------------------------------------------------- auth tiers and the anonymous rate limit
+def test_process_is_anonymous_and_batch_is_keyed(monkeypatch):
+    from fastapi.testclient import TestClient
+    import api.main as m
+    monkeypatch.setattr(m, "API_TOKEN", "secret")
+    m.store = MemoryStore()
+    client = TestClient(m.app)
+    r = client.post("/process", json=_email("anon-1"))
+    assert r.status_code == 200 and r.json()["decision"]["category"] == "BL_COMPARISON"
+    assert client.post("/batch", json={"emails": [_email("b-1")]}).status_code == 401
+    assert client.post("/batch", json={"emails": [_email("b-1")]}, headers={"X-API-Key": "secret"}).status_code == 200
+    assert client.post("/admin/chaos?enabled=false").status_code == 401
+    assert client.get("/health").json()["api_key_required_for"] == ["POST /batch", "POST /failures/{key}/retry", "POST /admin/chaos"]
+
+
+def test_process_rate_limit_per_ip(monkeypatch):
+    from fastapi.testclient import TestClient
+    import api.main as m
+    monkeypatch.setattr(m, "RATE_LIMIT_PER_MIN", 3)
+    m._rate_hits.clear()
+    client = TestClient(m.app)
+    codes = [client.post("/process", json=_email("rl"), headers={"X-Forwarded-For": "203.0.113.9"}).status_code for _ in range(4)]
+    assert codes == [200, 200, 200, 429]
+    r = client.post("/process", json=_email("rl"), headers={"X-Forwarded-For": "203.0.113.9"})
+    assert "Retry-After" in r.headers and "per minute" in r.json()["detail"]
+    # another client is not affected
+    assert client.post("/process", json=_email("rl"), headers={"X-Forwarded-For": "198.51.100.4"}).status_code == 200

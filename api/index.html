@@ -21,9 +21,10 @@
 <h1>ShipDoc API <small id="ver"></small></h1>
 <small>Shipping-document intake: classify the email → parse the attached SI and draft BL → compare the seven key fields → escalate what a person must see.<br>
 <a href="/docs">OpenAPI docs</a> · <code>GET /health</code> · <code>POST /process</code> · <code>POST /batch</code> · <code>GET /failures</code></small>
-<label>X-API-Key (required for POST endpoints when the service is protected)</label><input id="key" placeholder="leave empty to send without a key">
+<p style="margin:10px 0 0;font-size:13px;color:#52514e"><b>No credentials needed</b> to process a single email (section 1) - just click. Only <b>batch processing</b> (section 2) and dead-letter retries need an API key, because one batch can consume the LLM quota.</p>
+<label>X-API-Key (batch and retry only; leave empty for single-email processing)</label><input id="key" placeholder="not needed for section 1">
 
-<h2>1 · Process one email (synchronous)</h2>
+<h2>1 · Process one email (synchronous, no key needed)</h2>
 <div class="row"><div><label>email_id</label><input id="eid" value="demo-001"></div><div><label>from</label><input id="from" value="ops@example.com"></div></div>
 <label>subject</label><input id="subj" value="TO CONFIRM DOCS _ 5RSG-00133 _ CALLAO_PERU">
 <label>body</label><textarea id="body">Hi,
@@ -32,11 +33,12 @@ Attached are the SI and draft BL for OC 5RSG-00133. Please check the details and
 
 Best Regards</textarea>
 <label>attachments (SI / BL as .txt, .pdf, .docx or .xlsx — names with _SI / _BL are routed by name, otherwise by content)</label><input id="files" type="file" multiple>
-<button id="go">Process email</button> <button id="hb" class="gray">Health check (deep)</button>
+<button id="go">Process email</button> <button id="sample" class="gray">Use sample SI + BL (3 vs 4 containers)</button> <button id="hb" class="gray">Health check (deep)</button>
+<div id="sampleNote" style="display:none;font-size:12px;color:#52514e;margin-top:6px">Sample attachments loaded: an SI and a draft BL that disagree on the container count. Click <b>Process email</b>.</div>
 <div id="sum"></div>
 <pre id="out">Results will appear here.</pre>
 
-<h2>2 · Batch with visible failures and retries (Cloud Tasks)</h2>
+<h2>2 · Batch with visible failures and retries (Cloud Tasks, API key required)</h2>
 <small>Each email becomes a task with up to <b>3 attempts</b> (exponential backoff). A third failure lands in the <b>dead-letter queue</b> with its reason and original input, from where it can be retried.
 The demo batch below sends one healthy email, one that fails twice then succeeds (<code>fail_times=2</code>), and one that fails every time (<code>fail_times=99</code>).</small>
 <div>
@@ -60,13 +62,19 @@ const cls=s=>s==='OK'||s==='DONE'?'ok':s==='MISMATCH'||s==='FAILED'?'bad':s==='Q
 fetch('/health').then(r=>r.json()).then(h=>{$('ver').textContent='v'+h.version+' · LLM: '+h.llm_provider+' · tasks: '+h.tasks_mode+' · store: '+h.store+(h.chaos_enabled?' · CHAOS ON':'')}).catch(()=>{});
 const b64=f=>new Promise((ok,err)=>{const r=new FileReader();r.onload=()=>ok(r.result.split(',')[1]);r.onerror=err;r.readAsDataURL(f)});
 
+const SI="SHIPPING INSTRUCTION\nShipper: ABC CO., LTD.\nConsignee: XYZ LLC\nNotify Party: XYZ LLC\nPort of Loading: SINGAPORE (SGSIN)\nPort of Discharge: PORT KLANG, MALAYSIA (MYPKG)\nContainer Count: 3\nGross Weight: 22,000 KG\n";
+const BL="BILL OF LADING (DRAFT)\nShipper: ABC Co Ltd\nConsignee: XYZ LLC\nNotify: XYZ LLC\nLoad Port: SINGAPORE\nPOD: PORT KLANG\nTotal Containers: 4\nGross Wt (kgs): 22 MT\n";
+let sampleAtts=null;
+$('sample').onclick=()=>{sampleAtts=[{name:'sample_SI.txt',text:SI},{name:'sample_BL.txt',text:BL}];$('files').value='';$('sampleNote').style.display=''};
+$('files').onchange=()=>{sampleAtts=null;$('sampleNote').style.display='none'};
+
 // ---- 1. single email
 $('go').onclick=async()=>{
   $('go').disabled=true;$('out').textContent='Processing…';$('sum').innerHTML='';
   try{
-    const atts=[];for(const f of $('files').files){atts.push({name:f.name,content_base64:await b64(f)})}
+    const atts=sampleAtts?[...sampleAtts]:[];for(const f of $('files').files){atts.push({name:f.name,content_base64:await b64(f)})}
     const payload={email_id:$('eid').value,from:$('from').value,subject:$('subj').value,body:$('body').value,attachments:atts};
-    const r=await fetch('/process',{method:'POST',headers:hdr(),body:JSON.stringify(payload)});const j=await r.json();
+    const r=await fetch('/process',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const j=await r.json();
     if(r.ok){const d=j.decision;
       $('sum').innerHTML=`<span class="pill">${d.category}</span><span class="pill ${cls(d.status)}">${d.status}</span>`
         +(d.review_reason?`<span class="pill warn">reason: ${d.review_reason}</span>`:'')
@@ -79,8 +87,6 @@ $('go').onclick=async()=>{
 $('hb').onclick=async()=>{$('out').textContent='Checking…';const r=await fetch('/health?deep=1');$('out').textContent=JSON.stringify(await r.json(),null,2)};
 
 // ---- 2. demo batch
-const SI="SHIPPING INSTRUCTION\nShipper: ABC CO., LTD.\nConsignee: XYZ LLC\nNotify Party: XYZ LLC\nPort of Loading: SINGAPORE (SGSIN)\nPort of Discharge: PORT KLANG, MALAYSIA (MYPKG)\nContainer Count: 3\nGross Weight: 22,000 KG\n";
-const BL="BILL OF LADING (DRAFT)\nShipper: ABC Co Ltd\nConsignee: XYZ LLC\nNotify: XYZ LLC\nLoad Port: SINGAPORE\nPOD: PORT KLANG\nTotal Containers: 4\nGross Wt (kgs): 22 MT\n";
 const body="Hi,\n\nAttached are the SI and draft BL for OC 5RSG-00133. Please check the details and confirm.\n\nBest Regards";
 const mk=(id,extra={})=>({email_id:id,from:'ops@example.com',subject:'TO CONFIRM DOCS _ '+id,body,attachments:[{name:id+'_SI.txt',text:SI},{name:id+'_BL.txt',text:BL}],...extra});
 let batchId=null,poll=null;

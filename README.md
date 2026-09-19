@@ -75,7 +75,7 @@ data/
 
 ```bash
 python pipeline/run.py ./data submission.json      # pipeline → submission.json
-python -m pytest tests/ -q                          # 68 tests
+python -m pytest tests/ -q                          # 70 tests
 python -m uvicorn api.main:app --port 8090          # the API locally
 ```
 
@@ -100,7 +100,7 @@ Other evaluation scripts:
 |---|---|---|
 | `GET /` | — | Test page (works on a phone) |
 | `GET /health` | — | Liveness; `?deep=1` makes one real LLM call |
-| `POST /process` | `X-API-Key` | One email → `decision` + `evidence` (classification basis, parsed attachments, seven `FieldResult`s, readable report) |
+| `POST /process` | — (rate-limited per IP) | One email → `decision` + `evidence` (classification basis, parsed attachments, seven `FieldResult`s, readable report) |
 | `POST /batch` | `X-API-Key` | Up to 200 emails, one Cloud Tasks task each (3 attempts, exponential backoff); duplicates by email_id + content hash are skipped |
 | `GET /batch/{id}` | — | Per-email status of a batch |
 | `GET /report/{id}` | — | Result by idempotency key or email_id (Firestore) |
@@ -108,6 +108,8 @@ Other evaluation scripts:
 | `POST /failures/{key}/retry` | `X-API-Key` | Retry a dead-lettered email |
 
 Request body: `{"email_id", "from", "subject", "body", "attachments": [{"name", "content_base64"} or {"name", "text"}]}`.
+
+Auth is tiered by cost: single-email processing needs no credentials (10 requests / minute / IP); batch processing and dead-letter retries require `X-API-Key`, because one batch can consume the LLM quota.
 
 Deployment details, runtime identity, and the redeploy command: `docs/DEPLOY.md`.
 

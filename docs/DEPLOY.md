@@ -7,7 +7,7 @@ Service: `https://shipdoc-api-705106212012.asia-southeast1.run.app`　Project: `
 | Image | `Dockerfile`, `python:3.12-slim`, non-root (uid 10001), built from source by Cloud Build |
 | Runtime identity | Service account `shipdoc-run@eco-world-296707.iam.gserviceaccount.com`: `roles/aiplatform.user` + `roles/secretmanager.secretAccessor` |
 | LLM | `LLM_PROVIDER=vertex`, `GCP_LOCATION=global` (the Singapore region lacks some models), chain `gemini-3.5-flash-lite;gemini-3.5-flash;gemini-3.6-flash`. **No API key anywhere in the cloud** - authentication is the service account's ADC |
-| Secret | `API_TOKEN` <- Secret Manager `shipdoc-api-token:latest`; POST endpoints require `X-API-Key` |
+| Secret | `API_TOKEN` <- Secret Manager `shipdoc-api-token:latest`; required as `X-API-Key` on `POST /batch`, `POST /failures/{key}/retry`, `POST /admin/chaos` only. `POST /process` is anonymous and rate-limited |
 | Sizing | 1 vCPU / 1 GiB / concurrency 20 / timeout 300 s / 0-3 instances |
 | Upload scope | `.gcloudignore`: only `api/ pipeline/ shipdoc_core/ Dockerfile requirements.txt` - **no data/ .env .cache/** |
 | Async batch | Cloud Tasks queue `shipdoc-process` (asia-southeast1): `max-attempts=3`, `min-backoff=5s`, `max-backoff=60s`, `max-doublings=3`. Tasks call `POST /tasks/process` with an OIDC token for the service account; the handler verifies audience + email |
@@ -20,7 +20,7 @@ Service: `https://shipdoc-api-705106212012.asia-southeast1.run.app`　Project: `
 |---|---|---|
 | `GET /` | - | Test page, works on a phone |
 | `GET /health` | - | `?deep=1` makes one real LLM call to verify Vertex authentication |
-| `POST /process` | X-API-Key | One email -> `decision` (the submission record) + `evidence` (rule/LLM classification basis, parsed attachments, the seven `FieldResult`s, readable report) |
+| `POST /process` | - (rate-limited: `RATE_LIMIT_PER_MIN`, default 10, per client IP) | One email -> `decision` (the submission record) + `evidence` (rule/LLM classification basis, parsed attachments, the seven `FieldResult`s, readable report) |
 | `POST /batch` | X-API-Key | `{"emails":[...]}`, <= 200. One Cloud Tasks task per email; returns `batch_id` immediately. Same email (email_id + content hash) already queued/done -> `duplicate`, not re-processed |
 | `GET /batch/{batch_id}` | - | Per-email status (QUEUED / PROCESSING / RETRYING / DONE / FAILED), attempts, errors |
 | `GET /failures` | - | Dead-letter queue: emails that failed all 3 attempts, with reason and attempts (`?all=1` includes RECOVERED) |
@@ -70,7 +70,7 @@ gcloud firestore indexes composite create --collection-group=reports --field-con
 
 ## Demo script: failure -> dead letter -> retry -> success
 
-1. Open the service URL, paste the API key, click **Send demo batch**: three emails - `healthy`, `flaky` (`fail_times=2`, fails twice then succeeds on attempt 3) and `broken` (`fail_times=99`).
+1. Open the service URL, paste the API key (batch only - single-email processing in section 1 needs none), click **Send demo batch**: three emails - `healthy`, `flaky` (`fail_times=2`, fails twice then succeeds on attempt 3) and `broken` (`fail_times=99`).
 2. Watch the table: attempts climb 1 -> 2 -> 3 with the queue's backoff (~5 s, ~10 s); `broken` ends **FAILED** and appears in the dead-letter table with its reason.
 3. Click **Send the same batch again**: `duplicates` - nothing is re-processed (idempotency).
 4. Click **Retry** on the dead-letter row: it re-enqueues from the stored input (fault cleared) and turns **DONE** within seconds; the item shows **RECOVERED** under "show recovered too".

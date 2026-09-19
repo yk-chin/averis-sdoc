@@ -13,12 +13,12 @@ Before hardening P4b = 0.68 (LOCODE table too small) and P5 = 0.30 (attachments 
 - Attachments: filename tag > content fingerprint > both fail NEEDS_REVIEW (`pipeline/run.py`).
 - Comparison: `shipdoc_core/` (pure functions, no LLM). Port name over LOCODE; company names cut at `|` and `ON BEHALF OF`; LOCODE table 45 entries.
 - Escalation: when attachments are missing, route by intent - "compare the SI and draft BL" -> `missing_attachment`; "please send the draft BL" -> OK; unsure -> escalate.
-- API / async (`api/`): FastAPI on Cloud Run (asia-southeast1), LLM via Vertex with the service account (no API key in the cloud), `X-API-Key` from Secret Manager on POST endpoints. `POST /batch` = one Cloud Tasks task per email (queue `shipdoc-process`, 3 attempts, backoff 5s-60s); third failure -> Firestore `dead_letter` {FAILED, reason, input}; `GET /failures`, `POST /failures/{key}/retry`; idempotency key = email_id + content hash. Locally `TASKS_MODE=inline` + `STORE=memory`. Demo fault injection: `fail_times` on an email or `POST /admin/chaos`. Live: https://shipdoc-api-705106212012.asia-southeast1.run.app - demo script in `docs/DEPLOY.md`.
+- API / async (`api/`): FastAPI on Cloud Run (asia-southeast1), LLM via Vertex with the service account (no API key in the cloud), auth tiered by cost: `POST /process` anonymous with a per-IP rate limit (`RATE_LIMIT_PER_MIN`, default 10), `X-API-Key` from Secret Manager only on `POST /batch` / retry / chaos. `POST /batch` = one Cloud Tasks task per email (queue `shipdoc-process`, 3 attempts, backoff 5s-60s); third failure -> Firestore `dead_letter` {FAILED, reason, input}; `GET /failures`, `POST /failures/{key}/retry`; idempotency key = email_id + content hash. Locally `TASKS_MODE=inline` + `STORE=memory`. Demo fault injection: `fail_times` on an email or `POST /admin/chaos`. Live: https://shipdoc-api-705106212012.asia-southeast1.run.app - demo script in `docs/DEPLOY.md`.
 
 **Known, not done** (`docs/FINAL_ROUND_RISKS.md`): R5 interleave generalisation - deliberately left as an honestly-labelled 8-line patch (a data artefact, not a structural gap). Done: R1 (Vertex, local ADC + Cloud Run), R3 (prefix relation between party names -> MISMATCH, before the similarity score), R6 (record model in `parse_doc`: value after the colon, else the next non-label line).
 **Cost parameters**: cost_missed=8 / false_alarm=1 / review=0.35 at the top of `scripts_calibration.py` are placeholders; Averis to confirm at Workshop 2 on 21 Sep.
 
-**Tests**: `python -m pytest tests/ -q` -> 68 passed (60 pipeline/core + 8 async layer).
+**Tests**: `python -m pytest tests/ -q` -> 70 passed (60 pipeline/core + 10 api layer).
 
 **Language**: everything in the repo and every demo-facing string is English; only literal dataset samples such as "Gross Weight毛重(KGS)" keep their Chinese.
 

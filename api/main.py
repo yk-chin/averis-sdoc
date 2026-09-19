@@ -12,8 +12,12 @@ POST /admin/chaos          demo switch: simulate a downstream outage for every t
 GET  /health               liveness; ?deep=1 makes one real LLM call
 GET  /                     test / demo page
 
-Auth: when API_TOKEN is set (from Secret Manager on Cloud Run) the POST endpoints require a
-      matching X-API-Key header; GET endpoints are public. Without API_TOKEN everything is open.
+Auth, tiered by cost:
+      anonymous  - GET endpoints and POST /process (one email; rate-limited per client IP,
+                   RATE_LIMIT_PER_MIN requests per minute, HTTP 429 above that)
+      X-API-Key  - POST /batch, POST /failures/{key}/retry, POST /admin/chaos (a batch can burn the
+                   whole LLM quota). The key comes from Secret Manager on Cloud Run (API_TOKEN);
+                   without API_TOKEN set, these are open too (local development).
 LLM:  shared with the pipeline (pipeline/classify_llm.py). With LLM_PROVIDER=vertex it uses the
       runtime's Application Default Credentials (the Cloud Run service account) - no API key.
 
@@ -24,7 +28,7 @@ Failure handling ("handle processing failures visibly and allow retries"):
   same email never produces a second report.
 """
 from __future__ import annotations
-import base64, os, pathlib, sys, tempfile, time, uuid
+import base64, collections, os, pathlib, sys, tempfile, threading, time, uuid
 from typing import Any, Optional
 
 from fastapi import FastAPI, Header, HTTPException, Request
@@ -43,6 +47,7 @@ from api import tasks as taskmod                                                
 APP_VERSION = os.getenv("APP_VERSION", "dev")
 API_TOKEN = os.getenv("API_TOKEN", "").strip()
 MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
+RATE_LIMIT_PER_MIN = int(os.getenv("RATE_LIMIT_PER_MIN", "10"))   # anonymous POST /process, per client IP
 
 app = FastAPI(title="ShipDoc API", version=APP_VERSION,
               description="Shipping-document intake: classify the email, parse the attached SI and draft BL, "
@@ -79,6 +84,31 @@ class BatchIn(BaseModel):
 def _check_key(x_api_key: Optional[str]) -> None:
     if API_TOKEN and x_api_key != API_TOKEN:
         raise HTTPException(status_code=401, detail="missing or invalid X-API-Key")
+
+
+# Per-IP sliding window for the anonymous endpoint. Standard library only; state is per instance,
+# which is enough to stop a single client hammering one instance (Cloud Run runs 0-3 of them).
+_rate_hits: dict[str, collections.deque] = collections.defaultdict(collections.deque)
+_rate_lock = threading.Lock()
+
+
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for", "")        # Cloud Run puts the client first
+    return fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "unknown")
+
+
+def _rate_limit(request: Request) -> None:
+    now_ts = time.time()
+    ip = _client_ip(request)
+    with _rate_lock:
+        hits = _rate_hits[ip]
+        while hits and hits[0] <= now_ts - 60:
+            hits.popleft()
+        if len(hits) >= RATE_LIMIT_PER_MIN:
+            retry_after = int(hits[0] + 60 - now_ts) + 1
+            raise HTTPException(status_code=429, headers={"Retry-After": str(retry_after)},
+                                detail=f"rate limit: {RATE_LIMIT_PER_MIN} requests per minute per IP; retry in {retry_after}s")
+        hits.append(now_ts)
 
 
 def _email_dict(email: EmailIn) -> dict:
@@ -137,7 +167,8 @@ def health(deep: int = 0):
         "status": "ok", "version": APP_VERSION, "uptime_s": round(time.time() - _started),
         "llm_provider": os.getenv("LLM_PROVIDER") or "(disabled)",
         "gemini_model": os.getenv("GEMINI_MODEL", ""), "gcp_project": os.getenv("GCP_PROJECT", ""),
-        "api_key_required": bool(API_TOKEN),
+        "api_key_required_for": ["POST /batch", "POST /failures/{key}/retry", "POST /admin/chaos"] if API_TOKEN else [],
+        "anonymous_rate_limit_per_min": RATE_LIMIT_PER_MIN,
         "tasks_mode": os.getenv("TASKS_MODE", "inline"), "store": os.getenv("STORE", "memory"),
         "max_attempts": taskmod.MAX_ATTEMPTS, "chaos_enabled": bool(chaos.get("enabled")),
         "llm_stats": dict(LLM_STATS), "llm_models_used": dict(MODEL_USAGE),
@@ -153,9 +184,9 @@ def health(deep: int = 0):
     return info
 
 
-@app.post("/process", summary="Process one email synchronously: decision + per-field evidence")
-def process(email: EmailIn, x_api_key: Optional[str] = Header(default=None)):
-    _check_key(x_api_key)
+@app.post("/process", summary="Process one email synchronously: decision + per-field evidence (no key needed, rate-limited)")
+def process(email: EmailIn, request: Request):
+    _rate_limit(request)
     e = _email_dict(email)
     try:
         result = _process_email(e)
@@ -167,7 +198,7 @@ def process(email: EmailIn, x_api_key: Optional[str] = Header(default=None)):
     return dict(result, key=key)
 
 
-@app.post("/batch", summary="Enqueue one Cloud Tasks task per email; returns immediately")
+@app.post("/batch", summary="Enqueue one Cloud Tasks task per email; returns immediately (X-API-Key required)")
 def batch(payload: BatchIn, request: Request, x_api_key: Optional[str] = Header(default=None)):
     _check_key(x_api_key)
     if len(payload.emails) > 200:
@@ -246,7 +277,7 @@ def failure(key: str):
     return dict(r, key=key)
 
 
-@app.post("/failures/{key}/retry", summary="Retry a dead-lettered email from its stored input")
+@app.post("/failures/{key}/retry", summary="Retry a dead-lettered email from its stored input (X-API-Key required)")
 def retry(key: str, request: Request, x_api_key: Optional[str] = Header(default=None)):
     _check_key(x_api_key)
     r = store.get(DEAD_LETTER, key)
@@ -282,7 +313,7 @@ async def tasks_process(request: Request, authorization: Optional[str] = Header(
                                                   "status": "retry", "error": error})
 
 
-@app.post("/admin/chaos", summary="Demo switch: make every task attempt fail (simulated outage)")
+@app.post("/admin/chaos", summary="Demo switch: make every task attempt fail (simulated outage; X-API-Key required)")
 def chaos(enabled: bool, x_api_key: Optional[str] = Header(default=None)):
     _check_key(x_api_key)
     store.set(SETTINGS, "chaos", {"enabled": enabled, "updated": now()})
