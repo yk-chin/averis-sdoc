@@ -3,7 +3,7 @@
 Eval loop - run after every change; scores go to evals/history.jsonl
 Usage:  python scripts_eval.py <data dir> [--score-cli path] [--gt path]
 """
-import json, subprocess, sys, time, pathlib, argparse
+import collections, json, subprocess, sys, time, pathlib, argparse
 
 def git_sha():
     try: return subprocess.check_output(["git","rev-parse","--short","HEAD"],text=True).strip()
@@ -88,15 +88,44 @@ if result:
         pred = {k: set(sub[k]["defect_fields"]) for k in golden if k in sub}
         m = field_level_prf(golden, pred)
         field = {"n_emails": len(golden), "n_gold_defect_fields": sum(len(v) for v in golden.values()),
-                 **m.as_dict()}
+                 **m.with_ci()}
         print(f"  Field-level PRF on the hand-annotated golden set (n={field['n_emails']} emails, "
               f"{field['n_gold_defect_fields']} defect fields): P {m.precision:.3f}  R {m.recall:.3f}  F1 {m.f1:.3f}  "
               f"(tp {m.tp} fp {m.fp} fn {m.fn})")
+        print(f"  95% Wilson CI: precision {field['precision_ci95'][0]:.3f}-{field['precision_ci95'][1]:.3f}, "
+              f"recall {field['recall_ci95'][0]:.3f}-{field['recall_ci95'][1]:.3f}  (small n - the interval is the honest number)")
     else:
         print("  Field-level PRF: evals/golden_fields.json not found - skipped")
 
+    # AI usage: how much of the decision actually went through a model (the hybrid design in numbers).
+    from pipeline.classify_llm import MODEL_USAGE
+    from pipeline import vision as _vision
+    decided = collections.Counter(v.get("decided_by") for v in sub.values())
+    llm_cache = pathlib.Path(".cache/llm_classify.json")
+    models = collections.Counter()
+    try:
+        for v in json.load(llm_cache.open(encoding="utf-8")).values():
+            models[v.get("model", "?")] += 1
+    except Exception:                                  # noqa: BLE001 - cache absent is fine
+        pass
+    vision_docs = 0
+    try:
+        vision_docs = sum(1 for v in json.load(_vision.CACHE_PATH.open(encoding="utf-8")).values() if v.get("status") == "proposal")
+    except Exception:                                  # noqa: BLE001
+        pass
+    distinct_versions = len({json.loads(l)["sha"] for l in hist.read_text().splitlines() if l.strip()})
+    n_runs = sum(1 for l in hist.read_text().splitlines() if l.strip())
+    ai_usage = {"emails": len(sub), "decided_by_rule": decided.get("rule", 0), "decided_by_llm": decided.get("llm", 0),
+                "llm_share": round(decided.get("llm", 0) / max(1, len(sub)), 4),
+                "llm_models_cached": dict(models), "llm_models_this_run": dict(MODEL_USAGE),
+                "vision_documents": vision_docs,
+                "scoring_runs_recorded": n_runs, "distinct_code_versions_scored": distinct_versions}
+    print(f"  AI usage: rules {ai_usage['decided_by_rule']} / LLM {ai_usage['decided_by_llm']} "
+          f"({ai_usage['llm_share']:.1%}) of {len(sub)}; vision proposals cached for {vision_docs} documents; "
+          f"{n_runs} scoring runs over {distinct_versions} code versions")
+
     json.dump({"ts": rec["ts"], "sha": rec["sha"], "scores": rec, "classification": cls,
-               "field_level": field},
+               "field_level": field, "ai_usage": ai_usage},
               pathlib.Path("evals/metrics_latest.json").open("w", encoding="utf-8"), indent=1)
     print("  -> evals/metrics_latest.json")
 else:

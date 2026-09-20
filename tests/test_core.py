@@ -160,3 +160,14 @@ def test_fuzzy_never_confuses_net_with_gross():
     assert resolve_label("Vessel Name") == (None, False)
     assert resolve_label("Booking Ref") == (None, False)
     assert resolve_label("HS Code") == (None, False)
+
+
+def test_wilson_interval_is_honest_on_small_n():
+    from shipdoc_core.evaluate import wilson_interval, prf
+    lo, hi = wilson_interval(15, 15)
+    assert 0.79 < lo < 0.80 and hi == 1.0                     # 15/15 is not "1.0 +- 0"
+    assert wilson_interval(0, 0) == (0.0, 1.0)
+    lo2, hi2 = wilson_interval(150, 150)
+    assert lo2 > lo                                            # more data, tighter interval
+    d = prf(15, 0, 0).with_ci()
+    assert d["precision"] == 1.0 and d["precision_ci95"][0] < 0.8 and d["recall_ci95"][1] == 1.0

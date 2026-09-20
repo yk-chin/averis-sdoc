@@ -32,6 +32,25 @@ class PRF:
     def as_dict(self) -> dict:
         return asdict(self)
 
+    def with_ci(self) -> dict:
+        """as_dict plus Wilson 95 % intervals on precision (tp/(tp+fp)) and recall (tp/(tp+fn))."""
+        d = asdict(self)
+        d["precision_ci95"] = list(wilson_interval(self.tp, self.tp + self.fp))
+        d["recall_ci95"] = list(wilson_interval(self.tp, self.tp + self.fn))
+        return d
+
+
+def wilson_interval(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """Wilson score interval for a proportion k/n (95 % at z = 1.96). Honest on small n: 15/15 gives
+    (0.796, 1.0), not "1.0 +- 0". Returns (0.0, 1.0) when n == 0."""
+    if n <= 0:
+        return 0.0, 1.0
+    p = k / n
+    denom = 1 + z * z / n
+    centre = (p + z * z / (2 * n)) / denom
+    half = z * ((p * (1 - p) / n + z * z / (4 * n * n)) ** 0.5) / denom
+    return round(max(0.0, centre - half), 4), round(min(1.0, centre + half), 4)
+
 
 def prf(tp: int, fp: int, fn: int) -> PRF:
     p = tp / (tp + fp) if tp + fp else 0.0
