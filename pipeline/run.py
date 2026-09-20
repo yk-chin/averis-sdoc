@@ -13,6 +13,7 @@ from pipeline.parse_doc import parse_text_document
 from pipeline.parse_office import office_to_text
 from pipeline.classify import classify_email, expects_attachments, LLM_THRESHOLD
 from pipeline.classify_llm import classify_with_llm, STATS as LLM_STATS, MODEL_USAGE
+from pipeline import vision   # noqa: F401  (also re-exported for scripts)
 
 TEXT_EXT = {".txt"}
 OFFICE_EXT = {".pdf", ".docx", ".xlsx"}
@@ -38,7 +39,7 @@ def read_attachment(root: pathlib.Path, rel: str) -> tuple[str | None, str]:
 def classify_attachments(root, atts):
     """Assign attachments to the SI / BL slots.
     Priority: filename tag (_SI. / _BL.) > content fingerprint (detect_doc_type) > both fail -> left in unassigned
-    Returns (slots, unassigned): slots = {"SI": (doc, src) | None, "BL": ...}; unassigned = [(doc, src)]
+    Returns (slots, unassigned): slots = {"SI": (doc, src, rel_path) | None, "BL": ...}; unassigned = [(doc, src)]
     doc is None when the file exists but no text could be read (unreadable)."""
     slots: dict[str, tuple | None] = {"SI": None, "BL": None}
     pending, unassigned = [], []
@@ -50,16 +51,49 @@ def classify_attachments(root, atts):
         doc = parse_text_document(text) if text is not None else None
         tag = "SI" if "_SI." in base else "BL" if "_BL." in base else None
         if tag and slots[tag] is None:
-            slots[tag] = (doc, src)
+            slots[tag] = (doc, src, a)
         else:
-            pending.append((doc, src))
-    for doc, src in pending:                                   # content-fingerprint fallback
+            pending.append((doc, src, a))
+    for doc, src, a in pending:                                # content-fingerprint fallback
         kind = doc.doc_type if doc is not None else None
         if kind in slots and slots[kind] is None:
-            slots[kind] = (doc, src)
+            slots[kind] = (doc, src, a)
         else:
             unassigned.append((doc, src))
     return slots, unassigned
+
+
+def _vision_proposals(root, slots, details: dict | None) -> list[str]:
+    """For each slot the deterministic parser could not read, ask the vision model for a proposal; if both sides
+    then have values, run the deterministic comparator on them with the vision confidences (every verdict lands
+    below the review threshold by construction). Returns the review_detail lines to add."""
+    values, confs, lines = {}, {}, []
+    for side in ("SI", "BL"):
+        doc, _src, rel = slots[side]
+        if doc is not None and doc.readable:
+            values[side], confs[side] = doc.fields, doc.confidence
+            continue
+        prop = vision.extract_fields(root / rel)
+        if details is not None:
+            details["attachments"][side]["vision"] = prop
+        if prop.get("status") == "proposal":
+            values[side], confs[side] = prop["fields"], prop["confidence"]
+            got = [k for k, v in prop["fields"].items() if v]
+            lines.append(f"{side}: vision proposal for {len(got)} field(s) at confidence <= {prop['max_confidence']:.2f} "
+                         f"({prop['model']}) - please confirm against the scan")
+        else:
+            lines.append(f"{side}: no vision proposal - {prop.get('reason', prop.get('status'))}")
+    if len(values) == 2 and all(values[s].get(k) for s in values for k in FIELD_KEYS):
+        rep = compare_documents("provisional", values["SI"], values["BL"], si_conf=confs["SI"], bl_conf=confs["BL"])
+        if details is not None:
+            details["provisional"] = {"fields": [r.to_dict() for r in rep.results],
+                                      "note": "built on a vision proposal; confidences are capped below the review "
+                                              "threshold, so this can only inform a reviewer, never auto-pass"}
+        if rep.mismatched_fields:
+            lines.append(f"provisional comparison flags: {', '.join(sorted(rep.mismatched_fields))}")
+        else:
+            lines.append("provisional comparison: no difference seen in the proposal")
+    return lines
 
 
 def decide(email, root, *, details: dict | None = None) -> dict:
@@ -68,7 +102,7 @@ def decide(email, root, *, details: dict | None = None) -> dict:
     atts = email.get("attachments", []) or []
     slots, unassigned = classify_attachments(root, atts)
     has_si, has_bl = slots["SI"] is not None, slots["BL"] is not None
-    si, bl = (slots["SI"] or (None, None))[0], (slots["BL"] or (None, None))[0]
+    si, bl = (slots["SI"] or (None, None, None))[0], (slots["BL"] or (None, None, None))[0]
     category, decided_by, conf = classify_email(email, has_si, has_bl)
     classification_confidence = conf
     if details is not None:
@@ -125,9 +159,14 @@ def decide(email, root, *, details: dict | None = None) -> dict:
                         if has_si or has_bl else "body asks for a comparison but neither SI nor BL is attached")
 
     if si is None or bl is None or not si.readable or not bl.readable:
-        # No text could be parsed from the file (empty, garbled, or an image-only PDF). Reported honestly; never guessed.
+        # No text could be parsed from the file (empty, garbled, or an image-only PDF). The decision is honest -
+        # NEEDS_REVIEW / unreadable - but for a genuine scan a vision model proposes the fields (confidence capped
+        # at 0.60 < review threshold 0.62) and a provisional comparison is attached so the reviewer starts from
+        # "the scan seems to say X, please confirm" instead of from nothing. LLM proposes, the core disposes.
         which = "SI" if (si is None or not si.readable) else "BL"
-        return escalate("unreadable", f"{which} attachment could not be parsed (empty, garbled or image-only)")
+        detail = [f"{which} attachment could not be parsed (empty, garbled or image-only)"]
+        detail += _vision_proposals(root, slots, details)
+        return escalate("unreadable", *detail)
 
     if si.doc_type != "SI" or bl.doc_type != "BL":
         return escalate("wrong_doc_type",
