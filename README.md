@@ -1,6 +1,10 @@
 # ShipDoc
 
+[![ci](https://github.com/yk-chin/averis-sdoc/actions/workflows/ci.yml/badge.svg)](https://github.com/yk-chin/averis-sdoc/actions/workflows/ci.yml)
+
 Averis × Monash Hackathon 2026 — shipping-document intake for a BPO documentation team.
+
+**LLM proposes, the deterministic core disposes.** Gemini does what a model is good at — understanding an ambiguous email, reading a scanned page — and a pure, auditable core does what a verdict needs: normalise, compare, keep the evidence, escalate only what a person must see. The ablation below shows why that split is the better answer, not the cautious one.
 
 An email arrives. ShipDoc classifies it, parses the attached Shipping Instruction (SI) and draft Bill of Lading (BL), compares the seven fields that matter, and escalates only what a person genuinely needs to look at — **without creating false alarms**.
 
@@ -23,33 +27,57 @@ Trajectory: 0.766 (rules only) → 0.890 (LLM fallback) → 0.891 (intent-aware 
 
 Six semantics-preserving perturbations of the dataset (label synonyms, company-suffix spelling, weight units, UN/LOCODE vs port names, untagged attachment names) all score 1.000 after hardening — `docs/PERTURBATION_REPORT.md`.
 
+## Is the hybrid a shortcut? The ablation says no
+
+Same 520 emails, same black-box scorer (`scripts/ablation.py` → `evals/ablation.json`):
+
+| configuration | final | macro-F1 | defect F1 | end-to-end | escalation precision |
+|---|---|---|---|---|---|
+| rules only (LLM and vision off) | 0.8433 | 0.478 | 1.000 | 1.000 | 1.000 |
+| **LLM only** (Gemini classifies and compares from raw text) | 0.9257 | 1.000 | 0.900 | 0.891 | 0.171 |
+| **hybrid (shipped)** | 1.0000 | 1.000 | 1.000 | 1.000 | 1.000 |
+
+LLM-only classifies perfectly and *still* loses: it sends **111 of 220 comparisons** to a human (20 are genuine) — the false-alarm failure mode a BPO team cannot absorb. Rules alone cannot tell an invoice query from a general note. The deterministic core keeps the comparison at 1.0 under either front end; the LLM is what makes the front end right.
+
 ## How it works
 
-```
-email ──► rules (body only)  ──conf ≥ 0.80──► category
-              │ conf < 0.80
-              ▼
-          Gemini (structured output, pydantic-validated, model fallback chain, cached)
-                                                     │
-attachments ──► filename tag > content fingerprint ──► SI / BL
-                                                     │
-          deterministic core: alias resolution → normalisation → field-by-field compare
-                                                     │
-          OK  |  MISMATCH + defect fields  |  NEEDS_REVIEW (missing_attachment / unreadable /
-                                              wrong_doc_type / missing_value)
+```mermaid
+flowchart LR
+  subgraph intake["Intake"]
+    E[Email + attachments] --> R{Rules on the body\nconf ≥ 0.80?}
+    R -- yes --> C[category]
+    R -- no --> G[Gemini classify\nstructured output, cached]
+    G --> C
+    E --> A[Attachments\nfilename tag › content fingerprint]
+    A --> P[Deterministic parser\ntxt · pdf · docx · xlsx]
+    P -- no text --> V[Gemini vision proposal\nconfidence ≤ 0.60]
+  end
+  subgraph core["Deterministic core (no LLM, no network)"]
+    P --> N[alias resolution → normalisation]
+    V -. provisional .-> N
+    N --> K[field-by-field compare\nevidence per verdict]
+    K --> D[OK · MISMATCH + fields · NEEDS_REVIEW\nmissing_attachment / unreadable / wrong_doc_type / missing_value]
+  end
+  subgraph cloud["Cloud"]
+    D --> CR[Cloud Run API\nrequest ids, structured logs]
+    CR --> CT[Cloud Tasks\n3 attempts, backoff] --> FS[(Firestore\nreports · dead_letter · review)]
+    CR --> VX[Vertex AI]
+    FS --> VC[Vercel console\ninbox · diff board · queues · eval · human review]
+  end
 ```
 
-Why a deterministic core: most teams hand the SI and BL to an LLM and ask "what differs". That is not reproducible, not auditable, and hallucinates false alarms. Here the LLM only classifies emails when the rules are unsure; every comparison is a pure function with evidence (raw value, normalised value, reason, confidence) that can be explained line by line.
+Why a deterministic core: most teams hand the SI and BL to an LLM and ask "what differs". That is not reproducible, not auditable, and — measured above — over-escalates. Here the LLM classifies emails the rules are unsure about (55 % of this inbox) and reads scans the parser cannot (with its confidence capped below the review threshold, so it can inform a reviewer but never auto-pass); every comparison is a pure function with evidence (raw value, normalised value, reason, confidence) that can be explained line by line.
 
 | Module | Role |
 |---|---|
-| `shipdoc_core/fields.py` | The seven-field ontology, label aliases, and **near-miss traps** (Place of Receipt ≠ Port of Loading) |
+| `shipdoc_core/fields.json`, `fields.py` | The seven-field ontology as **configuration** (key, kind, aliases, near-miss traps such as Place of Receipt ≠ Port of Loading); an eighth field is one JSON entry, proven by `tests/test_ontology.py` |
 | `shipdoc_core/normalize.py` | Company names (suffixes, "on behalf of"), ports (names + UN/LOCODE), counts, weights with unit conversion |
 | `shipdoc_core/compare.py` | Deterministic comparator → `FieldResult` with evidence, `ComparisonReport` |
 | `shipdoc_core/evaluate.py` | PRF, confusion, **confidence calibration (ECE)**, **cost-sensitive threshold optimisation** |
 | `pipeline/classify.py` | Rule-based email classification (body only — subjects are deliberately misleading in the data) and the attachment-intent check |
 | `pipeline/classify_llm.py` | Gemini fallback via `google-genai`: `LLM_PROVIDER=aistudio` (API key) or `vertex` (service-account ADC) |
 | `pipeline/parse_doc.py`, `parse_office.py` | txt / pdf / docx / xlsx → "Label: Value" → fields |
+| `pipeline/vision.py` | Gemini vision proposal for image-only PDFs (confidence capped at 0.60 < review threshold 0.62; corrupt files never uploaded) |
 | `pipeline/run.py` | End-to-end pipeline → `submission.json` |
 | `api/main.py`, `api/tasks.py`, `api/store.py` | FastAPI service; Cloud Tasks batch processing with 3 retries, a Firestore dead-letter queue and manual retry ("handle processing failures visibly and allow retries") |
 
@@ -58,6 +86,16 @@ Design invariants:
 2. When unsure → `UNDETERMINED` → a human. Never guess.
 3. Formatting-only differences must be `NORMALIZED_MATCH`, never a mismatch.
 4. Every verdict carries a reason and the before/after values.
+5. A model output is a proposal: its confidence is capped below the review threshold, so it can never auto-pass.
+
+## Why a mismatch costs money (the business case, to be sized with Averis at Workshop 2)
+
+- **Consignee wrong on a negotiable (to-order) B/L** — the bill is the document of title; once issued and in circulation, cargo can be released against it to the wrong party. That is a title risk, not a delay.
+- **Gross weight wrong** — the verified gross mass (SOLAS VGM) is a mandatory declaration; a wrong figure can mean the box is refused at the terminal, re-weighed, or rolled to the next sailing.
+- **Any field differing from the letter of credit** — under UCP 600 a documentary discrepancy lets the issuing bank refuse the documents; the practical costs are a discrepancy fee per presentation and, worse, payment delayed for weeks while documents are corrected and re-presented.
+- **Amending a B/L after issue** — carriers charge an amendment fee per correction and the correction may miss the documentation cut-off, so the shipment rolls over.
+
+The subject lines in this inbox carry `LC`, `DP`, `CFR`, `OA` — payment terms and Incoterms. The system does not yet read them; when it does, an LC shipment with a mismatch is the one to escalate first. Indicative cost model and sensitivity: `docs/ROI.md`.
 
 ## Setup
 
@@ -102,6 +140,20 @@ Browser calls go through a Next.js rewrite (`/api/*` → `API_BASE`), so the API
 
 The inbox data is the organiser's dataset loaded into our own Firestore with `scripts/load_cloud.py ./data --api <url>` (3 batches through `POST /batch`; the dataset itself never enters the repository).
 
+## What we do not claim, and the evidence for it
+
+- **Threats to validity.** The 1.0 was reached with 33 black-box scoring queries over 26 code versions against the *same* 520 emails. Aggregate-only feedback limits, but does not remove, adaptive-overfitting risk. Counter-measures: six semantics-preserving perturbations, Wilson intervals on every small sample (the field-level golden set is n = 11 emails / 15 defect fields — precision 1.0 has a 95 % interval of 0.80–1.00), and an independent hold-out set (below).
+- **Independent hold-out** (`evals/holdout/`, 41 emails we authored with other company-suffix systems, ports outside our LOCODE table, label vocabularies outside our alias list, mixed-language labels, xlsx/docx, untagged files, 8 escalations; gold written before any run; never tuned on — `scripts/holdout_build.py`, `scripts/holdout_eval.py`):
+
+| hold-out (our re-implementation of the four axes) | final | macro-F1 | defect F1 | end-to-end | escalation P / R |
+|---|---|---|---|---|---|
+| rules only | 0.6248 | 0.486 | 0.667 | 0.680 | 0.67 / 1.00 |
+| **hybrid (shipped)** | **0.7416** | 0.953 | 0.667 | 0.680 (0.48–0.83) | 0.67 / 1.00 |
+
+  The 9 misses are listed in `evals/holdout_result_llm.json`: company-suffix synonyms beyond our table (K.K. ↔ Kabushiki Kaisha), UN/LOCODEs outside our 45 codes when one side gives only the code, label abbreviations outside our alias list, and grey-zone parties routed to a person rather than called a mismatch. They are reported, not patched: patching them would turn the hold-out into a training set. They are the roadmap.
+- **AI usage on the inbox**: rules decide 232 emails, Gemini 288 (55.4 %); vision proposals for the 6 scanned documents. Recorded per run in `evals/metrics_latest.json` (`ai_usage`).
+- **Performance**: pipeline 7–10 ms per email in process; API p50 17 ms locally, ~200 req/s per core; Cloud Run p50 85–110 ms from Malaysia — `docs/PERFORMANCE.md`.
+
 ## Self-evaluation (black box)
 
 We score ourselves against the organiser's Docker scoring service (`sdoc-hackathon-docker`, `docker compose up`) through its `POST /submit` endpoint:
@@ -116,6 +168,11 @@ Other evaluation scripts:
 
 - `scripts/calibration.py` — reliability diagram + ECE, cost-sensitive threshold sweep, score progress (`evals/*.png`). The cost constants at the top are placeholders until Averis confirms real ratios.
 - `scripts/perturb.py` — the perturbation tests (`docs/PERTURBATION_REPORT.md`).
+- `scripts/ablation.py` — rules-only / LLM-only / hybrid on the organiser's scorer (`evals/ablation.json`).
+- `scripts/holdout_build.py`, `scripts/holdout_eval.py` — the independent hold-out set and its scorer.
+- `scripts/bench.py` — latency / throughput (`evals/bench.json`, `docs/PERFORMANCE.md`).
+
+CI (`.github/workflows/ci.yml`): pyflakes + pytest (110 tests, rules only, no network) and the console's type-check + build on every push.
 
 ## API
 
@@ -131,18 +188,19 @@ Other evaluation scripts:
 | `GET /reports` | — | Slim rows for the console (decision + email header, never evidence or body); `?limit=&category=&status=&review_reason=&prefix=` |
 | `GET /failures` | `X-API-Key` | Dead-letter queue: emails that failed all 3 attempts, with reason and original input |
 | `POST /failures/{key}/retry` | `X-API-Key` | Retry a dead-lettered email |
-| `POST /report/{id}/review` | `X-API-Key` | Human-in-the-loop: `confirmed` or `corrected` (+ `corrected_fields`, `reviewer`, `reviewer_note`). Stores an audit trail (`original_ai_decision`, `human_decision`, `corrections`, `reviewed_at`, `reviewer`) next to the report; the AI decision is never overwritten and `GET /report/{id}` returns `effective_decision` |
+| `POST /report/{id}/review` | review token or Google OIDC | Human-in-the-loop: `confirmed` or `corrected` (+ `corrected_fields`, `reviewer`, `reviewer_note`). Stores an audit trail (`original_ai_decision`, `human_decision`, `corrections`, `reviewed_at`, `reviewer`, `identity {method, verified}`) next to the report; with an OIDC bearer the reviewer is the token's verified email. The AI decision is never overwritten and `GET /report/{id}` returns `effective_decision`. The console's detail page has the Confirm / Correct buttons |
 
 Request body: `{"email_id", "from", "subject", "body", "attachments": [{"name", "content_base64"} or {"name", "text"}]}`.
 
-Auth is tiered by cost and sensitivity: single-email processing needs no credentials (10 requests / minute / IP); batch processing, the dead-letter queue (original inputs, tracebacks) and retries require `X-API-Key`.
+Auth is tiered by cost and sensitivity: single-email processing needs no credentials (10 requests / minute / IP); batch processing, the dead-letter queue (original inputs, tracebacks) and retries require `X-API-Key`; review takes a separate review-only token or an OIDC identity. Every request carries an `X-Request-Id` (honoured or minted, echoed, stored on the report, logged as one JSON line for Cloud Logging). Public responses mask sender addresses (`a***@domain`).
 
 Deployment details, runtime identity, and the redeploy command: `docs/DEPLOY.md`.
 
 ## Future roadmap (not implemented)
 
-- **OCR / vision for scanned PDFs.** Image-only PDFs are currently escalated as `unreadable`. In the organiser's data the five unreadable documents are gold `unreadable`, so this is deliberately out of scope for the hackathon build.
-- **LLM extraction fallback** for documents the deterministic parser cannot read (non-tabular layouts, free-text letters). Today: `unreadable` / `missing_value` escalation, never a guess.
+- **Vision as more than a proposal.** Scans now get a Gemini vision proposal (confidence capped at 0.60) and a provisional comparison for the reviewer; the decision stays `unreadable`. Letting a proposal auto-pass would need a calibrated confidence on real scans, which we do not have yet.
+- **LLM extraction fallback** for text documents the deterministic parser cannot structure (non-tabular layouts, free-text letters). Today: `unreadable` / `missing_value` escalation, never a guess.
+- **The hold-out misses**: suffix synonyms beyond the table, UN/LOCODE lookups beyond 45 codes, abbreviation aliases, Incoterms / LC awareness for prioritisation.
 - **Learned confidence calibration.** Extraction and verdict confidences are fixed per outcome kind; `scripts/calibration.py` measures them but nothing is fitted yet.
 - **Firestore-transaction idempotency** across instances (today: idempotency key + status check, adequate at hackathon scale).
 

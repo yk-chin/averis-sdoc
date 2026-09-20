@@ -18,10 +18,12 @@ Before hardening P4b = 0.68 (LOCODE table too small) and P5 = 0.30 (attachments 
 
 **Console** (`web/`, Next.js 15.5.25, live at https://averis-sdoc-k3ce.vercel.app, Vercel project `averis-sdoc-k3ce` root dir `web`, env `API_BASE`; auto-deploys on push to main): `/` inbox (`GET /reports?prefix=email_`, ISR 15 s), `/emails/[id]` diff board with the raw → normalised popover + "Show normalisation" switch (localStorage), `/queues` exception vs incomplete (client polling `/api/reports?status=NEEDS_REVIEW`), `/eval` from `web/public/evals/` (`npm run sync-evals` copies from `evals/`; the PNGs are git-ignored at the source but committed under `web/public`). No UI library; tokens identical to `api/index.html`. Dataset loaded into Firestore once with `scripts/load_cloud.py` (520 rows; category totals 220/60/75/125/40; MISMATCH 46, NEEDS_REVIEW 20).
 
+**Review response (2026-09-20)**: request ids + JSON logs; masked senders; review identity (REVIEW_TOKEN / OIDC, `identity` in the audit trail); ontology in `shipdoc_core/fields.json` (+ `FieldKind.TEXT`, 8th-field test); `pipeline/vision.py` (scans -> Gemini proposal capped at 0.60, provisional comparison, decision unchanged; 512/513/514 scans, 511/515 corrupt); Wilson CIs + `ai_usage` in metrics; `scripts/` folder; GitHub Actions CI; property tests (found: dotted tonnes "176.127 MT", placeholders "N/A" as parties -> fixed, shared `is_placeholder`); ablation rules 0.8433 / LLM-only 0.9257 (esc precision 0.17) / hybrid 1.0; hold-out 41 emails: rules 0.6248, hybrid 0.7416 (never tune on it - new set first); bench (`docs/PERFORMANCE.md`); console review panel + vision evidence + eval card 06; docs (`docs/ROI.md`, business case in README). Cloud Run `min-instances=1` during judging (turn off after).
+
 **Known, not done** (`docs/FINAL_ROUND_RISKS.md`): R5 interleave generalisation - deliberately left as an honestly-labelled 8-line patch (a data artefact, not a structural gap). Done: R1 (Vertex, local ADC + Cloud Run), R3 (prefix relation between party names -> MISMATCH, before the similarity score), R6 (record model in `parse_doc`: value after the colon, else the next non-label line).
 **Cost parameters**: cost_missed=8 / false_alarm=1 / review=0.35 at the top of `scripts/calibration.py` are placeholders; Averis to confirm at Workshop 2 on 21 Sep.
 
-**Tests**: `python -m pytest tests/ -q` -> 78 passed (66 pipeline/core + 12 api layer).
+**Tests**: `python -m pytest tests/ -q` -> 110 passed (core, pipeline, ontology, vision, properties, api layer). CI runs them on every push.
 
 **Language**: everything in the repo and every demo-facing string is English; only literal dataset samples such as "Gross Weight毛重(KGS)" keep their Chinese.
 

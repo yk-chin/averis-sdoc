@@ -7,8 +7,11 @@ Service: `https://shipdoc-api-705106212012.asia-southeast1.run.app`　Project: `
 | Image | `Dockerfile`, `python:3.12-slim`, non-root (uid 10001), built from source by Cloud Build |
 | Runtime identity | Service account `shipdoc-run@eco-world-296707.iam.gserviceaccount.com`: `roles/aiplatform.user` + `roles/secretmanager.secretAccessor` |
 | LLM | `LLM_PROVIDER=vertex`, `GCP_LOCATION=global` (the Singapore region lacks some models), chain `gemini-3.5-flash-lite;gemini-3.5-flash;gemini-3.6-flash`. **No API key anywhere in the cloud** - authentication is the service account's ADC |
-| Secret | `API_TOKEN` <- Secret Manager `shipdoc-api-token:latest`; required as `X-API-Key` on `POST /batch`, `POST /failures/{key}/retry`, `POST /admin/chaos` only. `POST /process` is anonymous and rate-limited |
-| Sizing | 1 vCPU / 1 GiB / concurrency 20 / timeout 300 s / 0-3 instances |
+| Secrets | `API_TOKEN` <- Secret Manager `shipdoc-api-token:latest`; required as `X-API-Key` on `POST /batch`, `GET /failures*`, `POST /failures/{key}/retry`, `POST /admin/chaos`. `REVIEW_TOKEN` <- `shipdoc-review-token:latest`: review-only credential for `POST /report/{id}/review` (the console asks for it once per session); a Google OIDC bearer is accepted instead, in which case the reviewer is the verified email. `POST /process` is anonymous and rate-limited |
+| Sizing | 1 vCPU / 1 GiB / concurrency 20 / timeout 300 s / **1**-3 instances during judging (`min-instances=1`, ≈ USD 1.5–2 per day; set back to 0 afterwards) |
+| Observability | Every request: `X-Request-Id` honoured or minted, echoed on the response, stored on the report document, and one JSON line on stdout `{severity, request_id, method, path, status, elapsed_ms, email_id}` -> Cloud Logging (`jsonPayload.request_id` to trace an email end to end). Errors log with severity ERROR |
+| Privacy | Public responses mask sender addresses (`a***@domain`); stored documents are intact. Dataset is the organiser's synthetic set |
+| Vision | `VISION=on` (default): image-only PDFs go to Gemini through the same service account; `VISION=off` disables. Corrupt files are never uploaded |
 | Upload scope | `.gcloudignore`: only `api/ pipeline/ shipdoc_core/ Dockerfile requirements.txt` - **no data/ .env .cache/** |
 | Async batch | Cloud Tasks queue `shipdoc-process` (asia-southeast1): `max-attempts=3`, `min-backoff=5s`, `max-backoff=60s`, `max-doublings=3`. Tasks call `POST /tasks/process` with an OIDC token for the service account; the handler verifies audience + email |
 | Persistence | Firestore native `(default)` in asia-southeast1: collections `reports`, `jobs`, `dead_letter`, `settings`. Composite indexes: `dead_letter(status asc, updated desc)`, `reports(email_id asc, updated desc)` (the store falls back to in-memory filtering until they are built) |
@@ -36,14 +39,20 @@ Service: `https://shipdoc-api-705106212012.asia-southeast1.run.app`　Project: `
 Request body: `{"email_id","from","subject","body","attachments":[{"name","content_base64"} or {"name","text"}]}`.
 Attachment names containing `_SI.`/`_BL.` are routed by name, otherwise by content fingerprint.
 
+## Uptime monitor (judging window)
+
+The service exposes `GET /health` (200, JSON). Add it to UptimeRobot (free): monitor type HTTP(s), URL
+`https://shipdoc-api-705106212012.asia-southeast1.run.app/health`, interval 5 min, keyword `"status":"ok"`, alert to
+your email. Do the same for the console URL. This needs your account; it takes two minutes.
+
 ## Redeploy (after a code change)
 
 ```powershell
 gcloud run deploy shipdoc-api --source . --region asia-southeast1 --platform managed --allow-unauthenticated `
   --service-account shipdoc-run@eco-world-296707.iam.gserviceaccount.com `
   --set-env-vars "LLM_PROVIDER=vertex,GCP_PROJECT=eco-world-296707,GCP_LOCATION=global,GEMINI_MODEL=gemini-3.5-flash-lite;gemini-3.5-flash;gemini-3.6-flash,LLM_MIN_INTERVAL=0,APP_VERSION=<git sha>" `
-  --set-secrets API_TOKEN=shipdoc-api-token:latest `
-  --memory 1Gi --cpu 1 --concurrency 20 --timeout 300 --min-instances 0 --max-instances 3
+  --set-secrets API_TOKEN=shipdoc-api-token:latest,REVIEW_TOKEN=shipdoc-review-token:latest `
+  --memory 1Gi --cpu 1 --concurrency 20 --timeout 300 --min-instances 1 --max-instances 3
 ```
 
 Rotate the token: `gcloud secrets versions add shipdoc-api-token --data-file=<file>`, then redeploy (or `gcloud run services update shipdoc-api --update-secrets API_TOKEN=shipdoc-api-token:latest`).
