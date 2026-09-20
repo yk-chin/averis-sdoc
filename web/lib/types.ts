@@ -49,11 +49,22 @@ export interface FieldResult {
   needs_review: boolean;
 }
 
+export interface VisionProposal {
+  status: "proposal" | "not_a_pdf" | "disabled" | "failed";
+  reason?: string;
+  document_type?: string;
+  fields?: Record<string, string | null>;
+  confidence?: Record<string, number>;
+  model?: string;
+  max_confidence?: number;
+}
+
 export interface AttachmentEvidence {
   source: string;            // text | pdf | docx | xlsx | unreadable | <ext>
   doc_type: string | null;   // SI | BL | INVOICE | PACKING | COO | UNKNOWN
   readable: boolean;
   fields: Record<string, string | null>;
+  vision?: VisionProposal;   // only when the deterministic parser could not read the file
 }
 
 export interface Evidence {
@@ -65,6 +76,7 @@ export interface Evidence {
   decision_confidence?: number;
   review_reasons?: string[];
   review_detail?: string[];
+  provisional?: { fields: FieldResult[]; note: string };   // comparison built on a vision proposal
 }
 
 export interface ProcessResult {
@@ -86,7 +98,9 @@ export interface Report {
   result: ProcessResult | null;
   email?: { from: string | null; subject: string | null; body: string | null; attachments: string[] };
   review?: { original_ai_decision: Decision; human_decision: "confirmed" | "corrected"; corrections: Partial<Decision>;
-             reviewer_note: string; reviewer: string; reviewed_at: number };
+             reviewer_note: string; reviewer: string; reviewed_at: number;
+             identity?: { method: string; verified: boolean; email?: string }; request_id?: string };
+  request_id?: string;
   effective_decision: Decision | null;
   updated: number;
 }

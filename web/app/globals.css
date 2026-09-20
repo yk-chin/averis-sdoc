@@ -285,3 +285,22 @@ pre.body{font-family:inherit;font-size:15px;line-height:1.55}
   .footer{margin-top:var(--s-16)}
   .ellipsis{max-width:22ch}
 }
+
+/* ---------------------------------------------------------------- form controls (review panel) — same tokens as the API demo page */
+.field{display:flex;flex-direction:column;gap:var(--s-1)}
+.field>label,.label{font-size:14px;line-height:1.4;font-weight:500;color:var(--text-2)}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:var(--s-4)}
+.field input,.field select,.field textarea{width:100%;font:inherit;font-size:16px;color:var(--text);background:var(--card);
+  border:1px solid var(--line-2);border-radius:var(--r-m);padding:0 var(--s-3);height:40px;
+  transition:border-color var(--t-fast) var(--ease),box-shadow var(--t-fast) var(--ease)}
+.field textarea{height:auto;min-height:64px;padding:var(--s-2) var(--s-3);line-height:1.5;resize:vertical}
+.field input:hover,.field select:hover,.field textarea:hover{border-color:color-mix(in srgb,var(--line-2) 100%,var(--text) 20%)}
+.field input:focus-visible,.field select:focus-visible,.field textarea:focus-visible{outline:none;border-color:var(--accent);box-shadow:var(--ring)}
+.field input:disabled,.field select:disabled{opacity:.45}
+.actions{display:flex;flex-wrap:wrap;gap:var(--s-3);align-items:center}
+.fchk{display:inline-flex;align-items:center;gap:var(--s-1);height:28px;padding:0 var(--s-3);border-radius:var(--r-s);border:1px solid var(--line);background:var(--card-2);
+  font-size:13px;font-family:var(--mono);color:var(--text-2);cursor:pointer;user-select:none;transition:background var(--t-fast) var(--ease),color var(--t-fast) var(--ease)}
+.fchk input{margin:0;accent-color:var(--accent)}
+.fchk.on{background:var(--bad-tint);color:var(--bad-text);border-color:transparent}
+.fchk[aria-disabled=true]{opacity:.45;cursor:default}
+@media (max-width:599px){.row{grid-template-columns:1fr}}

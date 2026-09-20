@@ -1,0 +1,265 @@
+{
+ "ts": "2026-09-20T19:26:17",
+ "llm": true,
+ "n_emails": 41,
+ "n_bl_comparison": 25,
+ "final_score": 0.7416,
+ "stage1_macro_f1": 0.9532,
+ "defect_f1": 0.6667,
+ "defect_prf": {
+  "precision": 0.5625,
+  "recall": 0.8182,
+  "f1": 0.6667,
+  "tp": 9,
+  "fp": 7,
+  "fn": 2,
+  "precision_ci95": [
+   0.3318,
+   0.769
+  ],
+  "recall_ci95": [
+   0.523,
+   0.9486
+  ]
+ },
+ "end_to_end": 0.68,
+ "end_to_end_ci95": [
+  0.4841,
+  0.828
+ ],
+ "esc_precision": 0.6667,
+ "esc_recall": 1.0,
+ "per_class": {
+  "BL_COMPARISON": {
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "tp": 25,
+   "fp": 0,
+   "fn": 0
+  },
+  "GENERAL": {
+   "precision": 0.75,
+   "recall": 1.0,
+   "f1": 0.8571,
+   "tp": 3,
+   "fp": 1,
+   "fn": 0
+  },
+  "INVOICE_QUERY": {
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "tp": 5,
+   "fp": 0,
+   "fn": 0
+  },
+  "SI_REQUEST": {
+   "precision": 1.0,
+   "recall": 0.8333,
+   "f1": 0.9091,
+   "tp": 5,
+   "fp": 0,
+   "fn": 1
+  },
+  "SPAM": {
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "tp": 2,
+   "fp": 0,
+   "fn": 0
+  }
+ },
+ "confusion": {
+  "BL_COMPARISON": {
+   "BL_COMPARISON": 25,
+   "GENERAL": 0,
+   "INVOICE_QUERY": 0,
+   "SI_REQUEST": 0,
+   "SPAM": 0
+  },
+  "GENERAL": {
+   "BL_COMPARISON": 0,
+   "GENERAL": 3,
+   "INVOICE_QUERY": 0,
+   "SI_REQUEST": 0,
+   "SPAM": 0
+  },
+  "INVOICE_QUERY": {
+   "BL_COMPARISON": 0,
+   "GENERAL": 0,
+   "INVOICE_QUERY": 5,
+   "SI_REQUEST": 0,
+   "SPAM": 0
+  },
+  "SI_REQUEST": {
+   "BL_COMPARISON": 0,
+   "GENERAL": 1,
+   "INVOICE_QUERY": 0,
+   "SI_REQUEST": 5,
+   "SPAM": 0
+  },
+  "SPAM": {
+   "BL_COMPARISON": 0,
+   "GENERAL": 0,
+   "INVOICE_QUERY": 0,
+   "SI_REQUEST": 0,
+   "SPAM": 2
+  }
+ },
+ "misses": [
+  {
+   "email_id": "holdout_001",
+   "diff": {
+    "status": [
+     "OK",
+     "MISMATCH"
+    ],
+    "defect_fields": [
+     [],
+     [
+      "notify_party"
+     ]
+    ]
+   },
+   "review_detail": []
+  },
+  {
+   "email_id": "holdout_003",
+   "diff": {
+    "status": [
+     "OK",
+     "MISMATCH"
+    ],
+    "defect_fields": [
+     [],
+     [
+      "port_of_discharge",
+      "port_of_loading"
+     ]
+    ]
+   },
+   "review_detail": []
+  },
+  {
+   "email_id": "holdout_007",
+   "diff": {
+    "status": [
+     "OK",
+     "NEEDS_REVIEW"
+    ],
+    "review_reason": [
+     null,
+     "missing_value"
+    ]
+   },
+   "review_detail": [
+    "field blank or placeholder: shipper (SI), consignee (SI), gross_weight_kg (SI)"
+   ]
+  },
+  {
+   "email_id": "holdout_009",
+   "diff": {
+    "status": [
+     "OK",
+     "MISMATCH"
+    ],
+    "defect_fields": [
+     [],
+     [
+      "notify_party"
+     ]
+    ]
+   },
+   "review_detail": []
+  },
+  {
+   "email_id": "holdout_010",
+   "diff": {
+    "status": [
+     "OK",
+     "MISMATCH"
+    ],
+    "defect_fields": [
+     [],
+     [
+      "port_of_discharge",
+      "port_of_loading"
+     ]
+    ]
+   },
+   "review_detail": []
+  },
+  {
+   "email_id": "holdout_012",
+   "diff": {
+    "status": [
+     "MISMATCH",
+     "NEEDS_REVIEW"
+    ],
+    "review_reason": [
+     null,
+     "missing_value"
+    ],
+    "defect_fields": [
+     [
+      "gross_weight_kg"
+     ],
+     []
+    ]
+   },
+   "review_detail": [
+    "Shipper: similarity 0.91 is in the grey zone, needs a human"
+   ]
+  },
+  {
+   "email_id": "holdout_014",
+   "diff": {
+    "defect_fields": [
+     [
+      "port_of_loading"
+     ],
+     [
+      "consignee",
+      "port_of_loading"
+     ]
+    ]
+   },
+   "review_detail": []
+  },
+  {
+   "email_id": "holdout_016",
+   "diff": {
+    "status": [
+     "MISMATCH",
+     "NEEDS_REVIEW"
+    ],
+    "review_reason": [
+     null,
+     "missing_value"
+    ],
+    "defect_fields": [
+     [
+      "shipper"
+     ],
+     []
+    ]
+   },
+   "review_detail": [
+    "Notify Party: similarity 0.91 is in the grey zone, needs a human"
+   ]
+  },
+  {
+   "email_id": "holdout_029",
+   "diff": {
+    "category": [
+     "SI_REQUEST",
+     "GENERAL"
+    ]
+   },
+   "review_detail": []
+  }
+ ],
+ "note": "our re-implementation of the four axes on a self-authored set; final = unweighted mean"
+}

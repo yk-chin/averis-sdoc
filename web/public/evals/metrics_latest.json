@@ -1,9 +1,9 @@
 {
- "ts": "2026-09-20T03:48:12",
- "sha": "575920e",
+ "ts": "2026-09-20T19:20:13",
+ "sha": "7481989",
  "scores": {
-  "ts": "2026-09-20T03:48:12",
-  "sha": "575920e",
+  "ts": "2026-09-20T19:20:13",
+  "sha": "7481989",
   "final_score": 1.0,
   "stage1_macro_f1": 1.0,
   "defect_f1": 1.0,
@@ -101,6 +101,28 @@
   "f1": 1.0,
   "tp": 15,
   "fp": 0,
-  "fn": 0
+  "fn": 0,
+  "precision_ci95": [
+   0.7961,
+   1.0
+  ],
+  "recall_ci95": [
+   0.7961,
+   1.0
+  ]
+ },
+ "ai_usage": {
+  "emails": 520,
+  "decided_by_rule": 232,
+  "decided_by_llm": 288,
+  "llm_share": 0.5538,
+  "llm_models_cached": {
+   "gemini-3.5-flash-lite": 272,
+   "gemini-3.6-flash": 2
+  },
+  "llm_models_this_run": {},
+  "vision_documents": 6,
+  "scoring_runs_recorded": 33,
+  "distinct_code_versions_scored": 27
  }
 }

@@ -12,14 +12,14 @@ export async function Shell({ children }: { children: ReactNode }) {
         <div className="page">
           <Link href="/" className="brand" aria-label="ShipDoc home">
             <span className="name">ShipDoc</span>
-            <span className="ver">{h ? `v${h.version} · ${h.llm_provider} · ${h.store}${h.chaos_enabled ? " · CHAOS ON" : ""}` : "api offline"}</span>
+            <span className="ver">{h ? `API v${h.version} · ${h.llm_provider} · ${h.store}${h.chaos_enabled ? " · CHAOS ON" : ""}` : "api offline"}</span>
           </Link>
           <NavLinks />
         </div>
       </header>
       <main className="main"><div className="page">{children}</div></main>
       <footer className="page footer meta">
-        <span>ShipDoc · Averis × Monash Hackathon 2026</span>
+        <span>ShipDoc · Averis × Monash Hackathon 2026 · Synthetic dataset provided by the organiser for the hackathon; sender addresses are masked.</span>
         <span className="hint" style={{ fontSize: 12 }}><Icon name="info.circle" />Every verdict carries its raw value, normalised value and reason.</span>
       </footer>
     </>

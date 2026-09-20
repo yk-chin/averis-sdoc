@@ -1,0 +1,70 @@
+{
+ "ts": "2026-09-20T19:32:10",
+ "note": "aggregate scores from the organiser's /submit; rules_only = LLM and vision disabled; llm_only = Gemini classifies every email and decides every BL comparison from the raw document texts; hybrid = the shipped pipeline",
+ "results": {
+  "rules_only": {
+   "final_score": 0.8432532862054914,
+   "stage1_macro_f1": 0.4775109540183048,
+   "defect_f1": 1.0,
+   "end_to_end": 1.0,
+   "esc_precision": 1.0,
+   "elapsed_s": 9.0,
+   "categories": {
+    "BL_COMPARISON": 220,
+    "INVOICE_QUERY": 242,
+    "GENERAL": 46,
+    "SPAM": 12
+   },
+   "statuses": {
+    "OK": 154,
+    "MISMATCH": 46,
+    "NEEDS_REVIEW": 20
+   }
+  },
+  "llm_only": {
+   "final_score": 0.9256521739130434,
+   "stage1_macro_f1": 1.0,
+   "defect_f1": 0.9,
+   "end_to_end": 0.8913043478260869,
+   "esc_precision": 0.17117117117117117,
+   "elapsed_s": 569.3,
+   "categories": {
+    "BL_COMPARISON": 220,
+    "INVOICE_QUERY": 75,
+    "SI_REQUEST": 125,
+    "GENERAL": 60,
+    "SPAM": 40
+   },
+   "statuses": {
+    "OK": 54,
+    "NEEDS_REVIEW": 111,
+    "MISMATCH": 55
+   },
+   "classify_calls": 520,
+   "compare_calls": 227,
+   "classify_fallbacks": 0,
+   "compare_failures": 1,
+   "cache_hits": 0
+  },
+  "hybrid": {
+   "final_score": 1.0,
+   "stage1_macro_f1": 1.0,
+   "defect_f1": 1.0,
+   "end_to_end": 1.0,
+   "esc_precision": 1.0,
+   "elapsed_s": 9.0,
+   "categories": {
+    "BL_COMPARISON": 220,
+    "INVOICE_QUERY": 75,
+    "SI_REQUEST": 125,
+    "GENERAL": 60,
+    "SPAM": 40
+   },
+   "statuses": {
+    "OK": 154,
+    "MISMATCH": 46,
+    "NEEDS_REVIEW": 20
+   }
+  }
+ }
+}

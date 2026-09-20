@@ -3,6 +3,6 @@ import { copyFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 const src = join(process.cwd(), "..", "evals"), dst = join(process.cwd(), "public", "evals");
 mkdirSync(dst, { recursive: true });
-for (const f of ["metrics_latest.json", "history.jsonl", "perturbation.json", "progress.png", "calibration.png", "threshold.png"]) {
+for (const f of ["metrics_latest.json", "history.jsonl", "perturbation.json", "ablation.json", "holdout_result.json", "holdout_result_llm.json", "bench.json", "progress.png", "calibration.png", "threshold.png"]) {
   copyFileSync(join(src, f), join(dst, f)); console.log("copied", f);
 }
