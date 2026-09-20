@@ -1,6 +1,6 @@
 """Load the organiser's inbox into the Cloud Run service (Firestore) through POST /batch.
 
-    python scripts_load_cloud.py ./data --api https://shipdoc-api-....run.app [--batch-size 200]
+    python scripts/load_cloud.py ./data --api https://shipdoc-api-....run.app [--batch-size 200]
 
 Reads data/inbox/*.json and data/attachments/* only (never ground_truth.json). The API key is read from
 Secret Manager into memory via gcloud and is never printed or written. Emails already DONE on the service

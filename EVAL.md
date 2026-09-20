@@ -25,7 +25,7 @@ under `C:\Users\<you>\` and start again.
 
 ```powershell
 cd C:\Users\<you>\Documents\averis
-python scripts_eval.py .\data --server http://localhost:8080
+python scripts/eval.py .\data --server http://localhost:8080
 ```
 
 It builds `submission.json` -> POSTs it to `/submit` -> gets the scores back ->

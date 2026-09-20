@@ -20,7 +20,7 @@ from enum import Enum
 from .fields import FIELDS, FIELD_BY_KEY, FieldKind
 from .normalize import (
     normalize_party, normalize_port, normalize_count,
-    normalize_weight_kg, ports_match, basic_clean,
+    normalize_weight_kg, ports_match, basic_clean, is_placeholder,
 )
 
 
@@ -71,7 +71,7 @@ def _fuzzy(a: str, b: str) -> float:
 
 
 def _present(v) -> bool:
-    return v is not None and basic_clean(str(v)) != ""
+    return not is_placeholder(v)
 
 
 def compare_field(
@@ -233,7 +233,7 @@ def compare_documents(
                       confidences si_conf / bl_conf from the parser) falls below it is flagged, and
                       needs_human_review then turns the email into NEEDS_REVIEW in run.py. Verdict
                       confidences are fixed per outcome kind (clear mismatch 0.95-0.99, normalised match
-                      0.97-0.99, grey zone / unparseable 0.2-0.3); scripts_calibration.py measures how
+                      0.97-0.99, grey zone / unparseable 0.2-0.3); scripts/calibration.py measures how
                       well they track correctness.
     """
     si_conf, bl_conf = si_conf or {}, bl_conf or {}

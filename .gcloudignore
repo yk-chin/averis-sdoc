@@ -5,7 +5,7 @@ data/
 evals/
 docs/
 tests/
-scripts_*.py
+scripts/
 submission*.json
 .git/
 .gitignore

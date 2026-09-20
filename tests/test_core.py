@@ -171,3 +171,12 @@ def test_wilson_interval_is_honest_on_small_n():
     assert lo2 > lo                                            # more data, tighter interval
     d = prf(15, 0, 0).with_ci()
     assert d["precision"] == 1.0 and d["precision_ci95"][0] < 0.8 and d["recall_ci95"][1] == 1.0
+
+
+def test_dotted_thousands_vs_tonne_decimals():
+    from shipdoc_core.normalize import normalize_weight_kg
+    assert normalize_weight_kg("22.000 KG") == 22000.0          # continental thousands in kilograms
+    assert normalize_weight_kg("1.234.567 KG") == 1234567.0
+    assert normalize_weight_kg("176.127 MT") == 176127.0        # tonnes with three decimals = kilograms
+    assert normalize_weight_kg("22.5 MT") == 22500.0
+    assert normalize_weight_kg("22,000.00 KGS") == 22000.0

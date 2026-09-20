@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Eval loop - run after every change; scores go to evals/history.jsonl
-Usage:  python scripts_eval.py <data dir> [--score-cli path] [--gt path]
+Usage:  python scripts/eval.py <data dir> [--score-cli path] [--gt path]
 """
 import collections, json, subprocess, sys, time, pathlib, argparse
 
@@ -16,7 +16,8 @@ ap.add_argument("--gt", default=None, help="path to ground_truth.json")
 ap.add_argument("--server", default=None, help="Docker scoring service, e.g. http://localhost:8080")
 a = ap.parse_args()
 
-sys.path.insert(0, str(pathlib.Path(__file__).parent))
+ROOT = pathlib.Path(__file__).resolve().parents[1]      # repo root (this file lives in scripts/)
+sys.path.insert(0, str(ROOT))
 from pipeline.run import main
 sub, stats = main(a.data_dir, "submission.json")
 print(f"Generated {len(sub)} records -> submission.json")
@@ -48,7 +49,7 @@ if result:
            "end_to_end": result["end_to_end"]["rate"],
            "esc_precision": result["reliability"]["escalation_precision"]}
     pathlib.Path("evals").mkdir(exist_ok=True)
-    hist = pathlib.Path("evals/history.jsonl")
+    hist = ROOT / "evals" / "history.jsonl"
     prev = None
     if hist.exists():
         lines = [json.loads(l) for l in hist.read_text().splitlines() if l.strip()]
@@ -81,7 +82,7 @@ if result:
 
     # Field-level PRF on our own hand-annotated golden set (evals/golden_fields.json); gold field sets
     # are not returned by the scoring service. The sample size is part of the output.
-    golden_path = pathlib.Path("evals/golden_fields.json")
+    golden_path = ROOT / "evals" / "golden_fields.json"
     field = None
     if golden_path.exists():
         golden = {k: set(v) for k, v in json.load(golden_path.open(encoding="utf-8")).items() if not k.startswith("_")}
@@ -101,7 +102,7 @@ if result:
     from pipeline.classify_llm import MODEL_USAGE
     from pipeline import vision as _vision
     decided = collections.Counter(v.get("decided_by") for v in sub.values())
-    llm_cache = pathlib.Path(".cache/llm_classify.json")
+    llm_cache = ROOT / ".cache" / "llm_classify.json"
     models = collections.Counter()
     try:
         for v in json.load(llm_cache.open(encoding="utf-8")).values():
@@ -126,7 +127,7 @@ if result:
 
     json.dump({"ts": rec["ts"], "sha": rec["sha"], "scores": rec, "classification": cls,
                "field_level": field, "ai_usage": ai_usage},
-              pathlib.Path("evals/metrics_latest.json").open("w", encoding="utf-8"), indent=1)
+              (ROOT / "evals" / "metrics_latest.json").open("w", encoding="utf-8"), indent=1)
     print("  -> evals/metrics_latest.json")
 else:
     print("Not scored: pass --server or --score-cli + --gt")

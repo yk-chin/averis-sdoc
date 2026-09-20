@@ -91,7 +91,7 @@ A Next.js 15 app (no UI library; the same design tokens as the API's demo page, 
 | `/` Inbox | The 520 processed emails from `GET /reports?prefix=email_`: category / status filters, search, status chips, attachment count, rule vs LLM |
 | `/emails/{id}` Diff report | SI and draft BL side by side for the seven fields; hover (or the "Show normalisation" switch) reveals **raw → normalised** for every value plus the comparator's reason and confidence — formatting-only differences are `normalized`, never a mismatch |
 | `/queues` | Two independent queues: **Exception queue** (`unreadable` / `wrong_doc_type` / `missing_value` — something arrived and could not be read, recognised or decided) and **Incomplete requests** (`missing_attachment` — nothing usable attached, chase the sender) |
-| `/eval` | Scores, trajectory, per-class / confusion / field-level metrics, perturbations, and the three charts from `scripts_calibration.py` |
+| `/eval` | Scores, trajectory, per-class / confusion / field-level metrics, perturbations, and the three charts from `scripts/calibration.py` |
 
 ```bash
 cd web && npm install && npm run dev        # http://localhost:3000, API_BASE in .env.local (defaults to the live API)
@@ -100,22 +100,22 @@ npm run sync-evals                           # copy evals/*.json|jsonl|png into 
 
 Browser calls go through a Next.js rewrite (`/api/*` → `API_BASE`), so the API needs no CORS. Deploy on Vercel with Root Directory `web` and the environment variable `API_BASE`.
 
-The inbox data is the organiser's dataset loaded into our own Firestore with `scripts_load_cloud.py ./data --api <url>` (3 batches through `POST /batch`; the dataset itself never enters the repository).
+The inbox data is the organiser's dataset loaded into our own Firestore with `scripts/load_cloud.py ./data --api <url>` (3 batches through `POST /batch`; the dataset itself never enters the repository).
 
 ## Self-evaluation (black box)
 
 We score ourselves against the organiser's Docker scoring service (`sdoc-hackathon-docker`, `docker compose up`) through its `POST /submit` endpoint:
 
 ```bash
-python scripts_eval.py ./data --server http://localhost:8080
+python scripts/eval.py ./data --server http://localhost:8080
 ```
 
 The script builds `submission.json`, posts it, and appends the returned scores to `evals/history.jsonl`. **We read only the aggregate scores** (`final_score`, `stage1_macro_f1`, `defect_f1`, `end_to_end`, `esc_precision`). We never read, parse, or copy `ground_truth.json`; the service keeps `REVEAL_GT` off and the ground truth is used server-side only. That is the black-box setup the organiser designed — we see the score, not the answers, so the system has to genuinely generalise.
 
 Other evaluation scripts:
 
-- `scripts_calibration.py` — reliability diagram + ECE, cost-sensitive threshold sweep, score progress (`evals/*.png`). The cost constants at the top are placeholders until Averis confirms real ratios.
-- `scripts_perturb.py` — the perturbation tests (`docs/PERTURBATION_REPORT.md`).
+- `scripts/calibration.py` — reliability diagram + ECE, cost-sensitive threshold sweep, score progress (`evals/*.png`). The cost constants at the top are placeholders until Averis confirms real ratios.
+- `scripts/perturb.py` — the perturbation tests (`docs/PERTURBATION_REPORT.md`).
 
 ## API
 
@@ -143,7 +143,7 @@ Deployment details, runtime identity, and the redeploy command: `docs/DEPLOY.md`
 
 - **OCR / vision for scanned PDFs.** Image-only PDFs are currently escalated as `unreadable`. In the organiser's data the five unreadable documents are gold `unreadable`, so this is deliberately out of scope for the hackathon build.
 - **LLM extraction fallback** for documents the deterministic parser cannot read (non-tabular layouts, free-text letters). Today: `unreadable` / `missing_value` escalation, never a guess.
-- **Learned confidence calibration.** Extraction and verdict confidences are fixed per outcome kind; `scripts_calibration.py` measures them but nothing is fitted yet.
+- **Learned confidence calibration.** Extraction and verdict confidences are fixed per outcome kind; `scripts/calibration.py` measures them but nothing is fitted yet.
 - **Firestore-transaction idempotency** across instances (today: idempotency key + status check, adequate at hackathon scale).
 
 ## Documents

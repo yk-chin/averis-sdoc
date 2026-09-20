@@ -1,7 +1,7 @@
 """
 Confidence calibration + cost-sensitive threshold sweep + score progress
 =======================================================================
-Usage:   python scripts_calibration.py
+Usage:   python scripts/calibration.py
 Output:  evals/calibration.png   reliability diagram + ECE
          evals/threshold.png     threshold vs expected-cost curve (with the optimum)
          evals/progress.png      score line chart from evals/history.jsonl
@@ -27,7 +27,7 @@ COST_REVIEW      = 0.35   # escalation: the labour cost of one review
 # ============================================================================
 
 BASELINE_COMMIT = "e7dd042"          # the pre-fix comparison core (rules-only baseline)
-ROOT = pathlib.Path(__file__).resolve().parent
+ROOT = pathlib.Path(__file__).resolve().parents[1]      # repo root (this file lives in scripts/)
 DATA = ROOT / "data"
 EVALS = ROOT / "evals"
 
@@ -42,7 +42,7 @@ INK, INK2, MUTED, GRID, AXIS, SURFACE = "#0b0b0b", "#52514e", "#898781", "#e1e0d
 # ----------------------------------------------------------------------------
 def collect(tree: pathlib.Path, data: pathlib.Path) -> dict:
     here = str(pathlib.Path(__file__).resolve().parent)
-    sys.path = [str(tree)] + [p for p in sys.path if p not in (here, "")]   # must come before this tree
+    sys.path = [str(tree)] + [p for p in sys.path if p not in (here, str(ROOT), "")]   # must come before this tree
     from pipeline.run import classify_attachments
     from shipdoc_core.compare import compare_documents
     from shipdoc_core.fields import FIELD_KEYS

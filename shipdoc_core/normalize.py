@@ -36,6 +36,17 @@ def basic_clean(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
+# Blank placeholders a document may carry instead of a value: '???', '____', 'N/A', 'TBA', 'TBD', 'PENDING'.
+# One rule shared by the parser (-> missing_value escalation) and the comparator (-> MISSING, never a
+# 95 %-confident "mismatch" between 'N/A' and a real name).
+PLACEHOLDER = re.compile(r"^[\s_?\-.]*$|^(N\.?/?A\.?|TBA|TBD|PENDING|NIL|NONE|XXX+)$", re.I)
+
+
+def is_placeholder(v) -> bool:
+    """True for None, empty/whitespace, dashes/underscores/question marks, and the usual 'to be advised' tokens."""
+    return v is None or PLACEHOLDER.match(basic_clean(str(v))) is not None
+
+
 # ---------------------------------------------------------------- company names
 
 # Corporate-suffix equivalence classes. Keys are spellings, values the canonical form.
@@ -272,12 +283,15 @@ _UNIT_TO_KG = {
 _UNIT_KEYS = sorted(_UNIT_TO_KG, key=len, reverse=True)
 
 
-def _parse_number(tok: str) -> float | None:
+def _parse_number(tok: str, dot_is_decimal: bool = False) -> float | None:
     """
     Resolve the thousands-separator vs continental-decimal ambiguity:
         '22,000.00' -> 22000.00   (Anglo: comma thousands)
         '22.000,50' -> 22000.50   (continental: dot thousands)
-        '22.000'    -> 22000      (three digits, no other decimal hint -> thousands)
+        '22.000'    -> 22000      (a single dotted 3-digit group with no other hint -> thousands, kg/lbs)
+        '176.127'   -> 176.127    when dot_is_decimal (tonne units: a booking is never 176,127 tonnes,
+                                   and tonnes are habitually written with three decimals = the kilograms)
+    '1.234.567' is always thousands.
     """
     t = tok.strip()
     if not t:
@@ -292,8 +306,11 @@ def _parse_number(tok: str) -> float | None:
             return float(t.replace(",", "")) if re.fullmatch(r"\d{1,3}(,\d{3})+", t) \
                 else float(t.replace(",", "."))
         if has_d:
-            return float(t.replace(".", "")) if re.fullmatch(r"\d{1,3}(\.\d{3})+", t) \
-                else float(t)
+            if re.fullmatch(r"\d{1,3}(\.\d{3}){2,}", t):          # two or more dotted groups: thousands
+                return float(t.replace(".", ""))
+            if re.fullmatch(r"\d{1,3}\.\d{3}", t) and not dot_is_decimal:
+                return float(t.replace(".", ""))
+            return float(t)
         return float(t)
     except ValueError:
         return None
@@ -315,18 +332,21 @@ def normalize_weight_kg(raw) -> float | None:
     m = re.search(r"(\d[\d.,\s]*\d|\d)", s)
     if not m:
         return None
-    value = _parse_number(m.group(1).replace(" ", ""))
+    tail = s[m.end():].strip()
+    unit = None
+    for u in _UNIT_KEYS:
+        if re.match(r"^" + r"\s*".join(map(re.escape, u.split())) + r"\b", tail):
+            unit = u; break
+    if unit is None:
+        for u in _UNIT_KEYS:                      # unit written before the number
+            if re.search(r"\b" + r"\s*".join(map(re.escape, u.split())) + r"\b", s):
+                unit = u; break
+    # tonne units: a dotted 3-digit group is a decimal (176.127 MT = 176 127 kg), see _parse_number
+    tonne = unit is not None and _UNIT_TO_KG[unit] >= 1000.0
+    value = _parse_number(m.group(1).replace(" ", ""), dot_is_decimal=tonne)
     if value is None:
         return None
-
-    tail = s[m.end():].strip()
-    for unit in _UNIT_KEYS:
-        if re.match(r"^" + r"\s*".join(map(re.escape, unit.split())) + r"\b", tail):
-            return round(value * _UNIT_TO_KG[unit], 4)
-    for unit in _UNIT_KEYS:                       # unit written before the number
-        if re.search(r"\b" + r"\s*".join(map(re.escape, unit.split())) + r"\b", s):
-            return round(value * _UNIT_TO_KG[unit], 4)
-    return round(value, 4)                        # no unit: kg by the use-case default
+    return round(value * (_UNIT_TO_KG[unit] if unit else 1.0), 4)   # no unit: kg by the use-case default
 
 
 # LOCODE <-> port-name seed map, for matching when one side gives the code and the other the name.

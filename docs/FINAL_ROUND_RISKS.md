@@ -112,4 +112,4 @@
 | 6 | R5 generalise the interleave fix | 20 min | - |
 | 7 | Full regression: 51 tests + eval still 1.0 | 5 min | - |
 
-After every step run `python scripts_eval.py .\data --server http://localhost:8080`; roll back immediately if any axis drops.
+After every step run `python scripts/eval.py .\data --server http://localhost:8080`; roll back immediately if any axis drops.

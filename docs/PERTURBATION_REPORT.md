@@ -2,7 +2,7 @@
 
 > Purpose: answer "is the 1.0 on the v2 dataset generalisation or fitting?"
 > Method: perturb a **copy** of the dataset without changing its meaning, re-run the pipeline, score through the organiser's `/submit`.
-> Script: `scripts_perturb.py` (copies under `.cache/perturb/`, original `data/` read-only, ground_truth never read, `history.jsonl` not written).
+> Script: `scripts/perturb.py` (copies under `.cache/perturb/`, original `data/` read-only, ground_truth never read, `history.jsonl` not written).
 > Date: 2026-09-19 · Code: before hardening `65d498b` -> after hardening `88d7eed` (tag `day1-hardened`)
 
 ## Perturbations

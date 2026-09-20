@@ -1,9 +1,9 @@
 {
- "ts": "2026-09-20T19:14:50",
- "sha": "090049e",
+ "ts": "2026-09-20T19:20:13",
+ "sha": "7481989",
  "scores": {
-  "ts": "2026-09-20T19:14:50",
-  "sha": "090049e",
+  "ts": "2026-09-20T19:20:13",
+  "sha": "7481989",
   "final_score": 1.0,
   "stage1_macro_f1": 1.0,
   "defect_f1": 1.0,
@@ -122,7 +122,7 @@
   },
   "llm_models_this_run": {},
   "vision_documents": 6,
-  "scoring_runs_recorded": 32,
-  "distinct_code_versions_scored": 26
+  "scoring_runs_recorded": 33,
+  "distinct_code_versions_scored": 27
  }
 }

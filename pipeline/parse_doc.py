@@ -17,6 +17,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from shipdoc_core.normalize import PLACEHOLDER
 from shipdoc_core.fields import resolve_label_conf
 
 # Document-type fingerprints (found in the first few lines)
@@ -32,7 +33,7 @@ DOC_SIGNATURES = [
 ]
 
 # Blank placeholders: '???', '____', 'N/A', 'TBA' etc. -> missing_value
-BLANK = re.compile(r"^[\s_?\-.]*$|^(N\.?/?A\.?|TBA|TBD|PENDING|XXX+)$", re.I)
+BLANK = PLACEHOLDER                 # one placeholder rule, shared with the comparator (shipdoc_core.normalize)
 
 # Labels mix in Chinese: "Gross Weight毛重(KGS):" occurs 51 times in the real data.
 # If the character class excluded CJK the whole line would fail to match, the field would count as

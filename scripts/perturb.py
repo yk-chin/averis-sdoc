@@ -4,8 +4,8 @@ Perturbation test - is the 1.0 generalisation or fitting?
 Perturb a COPY of the dataset without changing its meaning, re-run the pipeline, score via /submit.
 Whichever perturbation drops the score is the real weak point.
 
-Usage:   python scripts_perturb.py            # run all
-         python scripts_perturb.py P3 P5      # run selected
+Usage:   python scripts/perturb.py            # run all
+         python scripts/perturb.py P3 P5      # run selected
 Output:  evals/perturbation.json (score + coverage per perturbation)
 
 Hard constraints:
@@ -26,7 +26,7 @@ Perturbations:
 from __future__ import annotations
 import json, pathlib, re, shutil, subprocess, sys, urllib.request
 
-ROOT = pathlib.Path(__file__).resolve().parent
+ROOT = pathlib.Path(__file__).resolve().parents[1]      # repo root (this file lives in scripts/)
 sys.path.insert(0, str(ROOT))
 from shipdoc_core.fields import FIELD_BY_KEY, FieldKind, resolve_label
 from pipeline.parse_doc import LABEL_LINE
