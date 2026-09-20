@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Chip } from "@/components/Chip";
 import { Icon } from "@/components/Icon";
-import { SectionLabel } from "@/components/SectionLabel";
 import { fmtScore } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Eval" };
@@ -20,7 +19,7 @@ interface Metrics {
 interface Run { ts: string; sha: string; final_score: number; stage1_macro_f1: number; defect_f1: number; end_to_end: number; esc_precision: number }
 interface Pert { desc?: string; final_score: number; macro_f1: number; defect_f1: number; end_to_end: number; esc_precision: number; pred_review: number }
 
-const BEFORE_HARDENING: Record<string, number> = { P4b: 0.6805, P5: 0.3 };   // docs/PERTURBATION_REPORT.md
+const BEFORE_HARDENING: Record<string, string> = { P4b: "0.6805", P5: "0.3000" };   // docs/PERTURBATION_REPORT.md
 const PERT_ORDER = ["baseline", "P1", "P2", "P3", "P4a", "P4b", "P5"];
 
 function load() {
@@ -29,20 +28,6 @@ function load() {
   const history = readFileSync(join(dir, "history.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as Run);
   const pert = JSON.parse(readFileSync(join(dir, "perturbation.json"), "utf8")) as Record<string, Pert>;
   return { metrics, history, pert };
-}
-
-/* Breakdown row: label · value, then a bar that grows to its share (staggered). */
-function Rows({ items, tone = "" }: { items: { k: string; label: string; v: number; max?: number; tone?: string; hint?: string }[]; tone?: string }) {
-  return (
-    <ul className="rows">
-      {items.map((it, i) => (
-        <li key={it.k}>
-          <div className="lv"><span>{it.label}{it.hint ? <span className="meta" style={{ display: "inline", marginLeft: 8 }}>{it.hint}</span> : null}</span><span className="v">{it.v.toFixed(3)}</span></div>
-          <div className="track"><div className={`bar ${it.tone ?? tone}`} style={{ "--w": `${(it.v / (it.max ?? 1)) * 100}%`, "--d": `${260 + i * 90}ms` } as React.CSSProperties} /></div>
-        </li>
-      ))}
-    </ul>
-  );
 }
 
 export default function EvalPage() {
@@ -54,7 +39,7 @@ export default function EvalPage() {
         <div className="copy">
           <h1>Evaluation</h1>
           <p className="lead">Scored black-box through the organiser&apos;s scoring service: we read aggregate scores only, never the ground truth.</p>
-          <p className="hint"><Icon name="info.circle" /><span>1.0 on the organiser&apos;s v2 dataset and on six semantics-preserving perturbations of it — not a claim about unseen data.</span></p>
+          <p className="hint"><Icon name="info.circle" /><span>These are 1.0 on the organiser&apos;s v2 dataset and on six semantics-preserving perturbations of it — not a claim about unseen data.</span></p>
         </div>
         <div className="meta">last run {m.ts.replace("T", " ")} · commit <code>{m.sha}</code> · {history.length} runs recorded</div>
       </div>
@@ -62,32 +47,38 @@ export default function EvalPage() {
       <section className="reveal" style={{ "--i": 1 } as React.CSSProperties}>
         <div className="scores">
           <div className="score final"><span className="v">{fmtScore(m.scores.final_score)}</span><span className="k">final score</span></div>
-          <div className="score"><span className="v">{fmtScore(m.scores.stage1_macro_f1)}</span><span className="k">macro-F1</span></div>
+          <div className="score"><span className="v">{fmtScore(m.scores.stage1_macro_f1)}</span><span className="k">classification macro-F1</span></div>
           <div className="score"><span className="v">{fmtScore(m.scores.defect_f1)}</span><span className="k">defect F1</span></div>
           <div className="score"><span className="v">{fmtScore(m.scores.end_to_end)}</span><span className="k">end-to-end</span></div>
-          <div className="score"><span className="v">{fmtScore(m.scores.esc_precision)}</span><span className="k">esc. precision</span></div>
+          <div className="score"><span className="v">{fmtScore(m.scores.esc_precision)}</span><span className="k">escalation precision</span></div>
         </div>
       </section>
 
       <section className="card reveal" style={{ "--i": 2 } as React.CSSProperties} aria-labelledby="h-trend">
-        <SectionLabel id="h-trend" trailing={<Chip small status="normalized">not by AI · scored by the organiser&apos;s service</Chip>}>Score after each eval run</SectionLabel>
+        <div className="card-head"><span className="numeral">01</span><h2 id="h-trend">Score after each eval run</h2><span className="tag">evals/history.jsonl</span></div>
         <Trend runs={history} />
         <p className="meta" style={{ marginTop: "var(--s-3)" }}>0.766 rules only → 0.890 LLM fallback → 0.891 intent-aware escalation → 1.000 comparison fixes. The two dips are LLM quota outages during cache rebuilds, kept on record.</p>
       </section>
 
       <section className="grid-2 reveal" style={{ "--i": 3 } as React.CSSProperties}>
         <div className="card">
-          <SectionLabel trailing="F1 per class · n = 520">Classification</SectionLabel>
-          <Rows tone="ok" items={classes.map((c) => ({ k: c, label: c, v: m.classification.per_class[c].f1, hint: `n ${m.classification.per_class[c].tp + m.classification.per_class[c].fn}` }))} />
-          <p className="meta" style={{ marginTop: 20 }}>Precision and recall are 1.000 for every class — the table view is the confusion matrix on the right.</p>
+          <div className="card-head"><span className="numeral">02</span><h2>Per class</h2><span className="tag">n = 520</span></div>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Class</th><th className="num">P</th><th className="num">R</th><th className="num">F1</th><th className="num">n</th></tr></thead>
+              <tbody>{classes.map((c) => { const p = m.classification.per_class[c]; return (
+                <tr key={c}><td>{c}</td><td className="num">{p.precision.toFixed(3)}</td><td className="num">{p.recall.toFixed(3)}</td><td className="num">{p.f1.toFixed(3)}</td><td className="num">{p.tp + p.fn}</td></tr>); })}
+              </tbody>
+            </table>
+          </div>
         </div>
         <div className="card">
-          <SectionLabel trailing="rows = gold · columns = predicted">Confusion</SectionLabel>
+          <div className="card-head"><span className="numeral">03</span><h2>Confusion</h2><span className="tag">rows = gold · columns = predicted</span></div>
           <div className="table-wrap confusion">
             <table>
               <thead><tr><th />{classes.map((c) => <th key={c} className="num" title={c}>{c.slice(0, 3)}</th>)}</tr></thead>
               <tbody>{classes.map((g) => (
-                <tr key={g}><td className="muted tight">{g}</td>{classes.map((p) => { const v = m.classification.confusion[g][p]; return (
+                <tr key={g}><td className="muted">{g}</td>{classes.map((p) => { const v = m.classification.confusion[g][p]; return (
                   <td key={p} className={`num ${g === p ? "diag" : "off"} ${v === 0 ? "zero" : ""}`}>{v}</td>); })}</tr>))}
               </tbody>
             </table>
@@ -97,37 +88,33 @@ export default function EvalPage() {
 
       <section className="grid-2 reveal" style={{ "--i": 4 } as React.CSSProperties}>
         <div className="card">
-          <SectionLabel trailing="hand-annotated golden set">Field level</SectionLabel>
-          <Rows tone="ok" items={[
-            { k: "p", label: "Precision", v: m.field_level.precision },
-            { k: "r", label: "Recall", v: m.field_level.recall },
-            { k: "f", label: "F1", v: m.field_level.f1 },
-          ]} />
-          <p className="meta" style={{ marginTop: 20 }}>{m.field_level.n_emails} emails, {m.field_level.n_gold_defect_fields} gold defect fields (tp {m.field_level.tp} · fp {m.field_level.fp} · fn {m.field_level.fn}).</p>
+          <div className="card-head"><span className="numeral">04</span><h2>Field level</h2><span className="tag">hand-annotated golden set</span></div>
+          <div className="stats" style={{ gridTemplateColumns: "repeat(3,1fr)" }}>
+            <div className="stat"><span className="v">{m.field_level.precision.toFixed(3)}</span><span className="k">precision</span></div>
+            <div className="stat"><span className="v">{m.field_level.recall.toFixed(3)}</span><span className="k">recall</span></div>
+            <div className="stat"><span className="v">{m.field_level.f1.toFixed(3)}</span><span className="k">F1</span></div>
+          </div>
+          <p className="meta" style={{ marginTop: "var(--s-3)" }}>{m.field_level.n_emails} emails, {m.field_level.n_gold_defect_fields} gold defect fields (tp {m.field_level.tp} · fp {m.field_level.fp} · fn {m.field_level.fn}).</p>
         </div>
         <div className="card">
-          <SectionLabel trailing="before → after hardening">Perturbations</SectionLabel>
-          <ul className="rows">
-            {PERT_ORDER.filter((k) => pert[k]).map((k, i) => {
-              const before = BEFORE_HARDENING[k] ?? pert[k].final_score, after = pert[k].final_score;
-              return (
-                <li key={k}>
-                  <div className="lv"><span><span className="mono" style={{ fontSize: 13, color: "var(--text-3)", marginRight: 8 }}>{k}</span>{pert[k].desc ?? "unperturbed"}</span>
-                    <span className="v">{before !== after ? <><span style={{ color: "var(--bad-text)" }}>{fmtScore(before)}</span> → </> : null}{fmtScore(after)}</span></div>
-                  <div className="track"><div className={`bar ${before !== after ? "bad" : "ok"}`} style={{ "--w": `${before * 100}%`, "--d": `${260 + i * 90}ms` } as React.CSSProperties} /></div>
-                  {before !== after ? <div className="track" style={{ marginTop: -4 }}><div className="bar ok" style={{ "--w": `${after * 100}%`, "--d": `${400 + i * 90}ms` } as React.CSSProperties} /></div> : null}
-                </li>
-              );
-            })}
-          </ul>
+          <div className="card-head"><span className="numeral">05</span><h2>Perturbations</h2><span className="tag">before → after hardening</span></div>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>#</th><th>What changed</th><th className="num">before</th><th className="num">after</th></tr></thead>
+              <tbody>{PERT_ORDER.filter((k) => pert[k]).map((k) => (
+                <tr key={k}><td className="mono">{k}</td><td>{pert[k].desc ?? "unperturbed"}</td>
+                  <td className="num">{BEFORE_HARDENING[k] ? <Chip small status="MISMATCH">{BEFORE_HARDENING[k]}</Chip> : fmtScore(pert[k].final_score)}</td>
+                  <td className="num"><Chip small status="OK">{fmtScore(pert[k].final_score)}</Chip></td></tr>))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
 
       <section className="reveal" style={{ "--i": 5 } as React.CSSProperties}>
-        <SectionLabel trailing={<span>generated by <code>scripts_calibration.py</code></span>}>Charts</SectionLabel>
         <div className="figs">
           <figure className="fig wide"><div className="img"><img src="/evals/progress.png" alt="Score after each eval run: final score and the four axes over the recorded runs" /></div>
-            <figcaption>progress.png — every eval run in <code>history.jsonl</code></figcaption></figure>
+            <figcaption>progress.png — every eval run in <code>history.jsonl</code>; generated by <code>scripts_calibration.py</code></figcaption></figure>
           <figure className="fig"><div className="img"><img src="/evals/calibration.png" alt="Reliability diagram: comparison confidence vs. accuracy, before fixes and current, with ECE" /></div>
             <figcaption>calibration.png — reliability diagram and ECE of the comparison core, baseline vs. current</figcaption></figure>
           <figure className="fig"><div className="img"><img src="/evals/threshold.png" alt="Cost-sensitive sweep of the auto-pass threshold and the share routed to human review" /></div>

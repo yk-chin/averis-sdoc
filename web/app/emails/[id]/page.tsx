@@ -1,14 +1,12 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { fetchReport } from "@/lib/api";
 import { CATEGORY_LABEL, REASON_LABEL, STATUS_LABEL, fmtRaw, fmtTime } from "@/lib/format";
 import type { AttachmentEvidence } from "@/lib/types";
-import { BackLink } from "@/components/BackLink";
 import { Board } from "@/components/Board";
 import { Chip } from "@/components/Chip";
 import { Icon } from "@/components/Icon";
-import { SectionLabel } from "@/components/SectionLabel";
 
 export const revalidate = 15;
 
@@ -28,13 +26,12 @@ export default async function EmailPage({ params }: { params: Promise<{ id: stri
   const cls = ev?.classification;
   const detail = res?.review_detail ?? [];
   const email = rep.email;
-  const n = (o: string) => fields.filter((f) => f.outcome === o).length;
 
   return (
     <div className="sections">
       <header className="stack-s reveal">
-        <Suspense fallback={<span className="hint"><Icon name="arrow.left" />Inbox</span>}><BackLink /></Suspense>
-        <h1 style={{ fontSize: 32, lineHeight: 1.15, letterSpacing: "-.02em" }}>{email?.subject || rep.email_id}</h1>
+        <Link href="/" className="hint" style={{ width: "fit-content" }}><Icon name="arrow.left" />Inbox</Link>
+        <h1 style={{ fontSize: 32 }}>{email?.subject || rep.email_id}</h1>
         <p className="muted">
           <span className="mono">{rep.email_id}</span>{email?.from ? <> · from {email.from}</> : null} · processed {fmtTime(rep.updated)}
           {rep.review ? <> · reviewed by {rep.review.reviewer} ({rep.review.human_decision})</> : null}
@@ -54,14 +51,14 @@ export default async function EmailPage({ params }: { params: Promise<{ id: stri
 
       {fields.length ? (
         <section className="card reveal" style={{ "--i": 1 } as React.CSSProperties} aria-labelledby="h-board">
-          <SectionLabel id="h-board" trailing={<span className="chips"><Chip small status="MISMATCH">{n("mismatch")} mismatch</Chip><Chip small status="normalized">{n("normalized")} normalised</Chip><Chip small status="exact">{n("exact")} exact</Chip></span>}>SI vs. draft BL</SectionLabel>
+          <div className="card-head"><span className="numeral">01</span><h2 id="h-board">SI vs. draft BL</h2><span className="tag">{fields.filter((f) => f.outcome === "mismatch").length} mismatch · {fields.filter((f) => f.outcome === "normalized").length} normalised · {fields.filter((f) => f.outcome === "exact").length} exact</span></div>
           <Board fields={fields} />
         </section>
       ) : null}
 
       {ev?.attachments ? (
         <section className="card reveal" style={{ "--i": 2 } as React.CSSProperties} aria-labelledby="h-att">
-          <SectionLabel id="h-att" trailing={`${email?.attachments?.length ?? 0} file(s)`}>Attachments</SectionLabel>
+          <div className="card-head"><span className="numeral">{fields.length ? "02" : "01"}</span><h2 id="h-att">Attachments</h2><span className="tag">{email?.attachments?.length ?? 0} file(s)</span></div>
           <div className="att">
             <AttCard slot="SI" title="Shipping Instruction" a={ev.attachments.SI} />
             <AttCard slot="BL" title="Draft Bill of Lading" a={ev.attachments.BL} />
@@ -71,21 +68,21 @@ export default async function EmailPage({ params }: { params: Promise<{ id: stri
       ) : null}
 
       <section className="grid-2 reveal" style={{ "--i": 3 } as React.CSSProperties}>
-        <div className="card">
-          <SectionLabel>Email</SectionLabel>
+        <div className="card stack-s">
+          <h3>Email</h3>
           <pre className="body">{email?.body || "(body not stored)"}</pre>
         </div>
-        <div className="card">
-          <SectionLabel trailing={cls?.llm ? <Chip small status="normalized">LLM consulted</Chip> : <Chip small status="OK">rules only</Chip>}>Classification basis</SectionLabel>
+        <div className="card stack-s">
+          <h3>Classification basis</h3>
           {cls ? (
             <div className="kv">
               <span className="k">rules</span><span className="v">{cls.rule_category} · {cls.rule_confidence.toFixed(2)}</span>
               <span className="k">LLM</span><span className="v">{cls.llm ? `${cls.llm.category} · ${cls.llm.confidence.toFixed(2)}` : "not consulted (rules were confident)"}</span>
-              {cls.llm ? <><span className="k">reason</span><span className="v" style={{ fontFamily: "inherit", fontSize: 15 }}>{cls.llm.reason}</span></> : null}
+              {cls.llm ? <><span className="k">reason</span><span className="v" style={{ fontFamily: "inherit", fontSize: 14 }}>{cls.llm.reason}</span></> : null}
               {cls.confidence !== undefined ? <><span className="k">final</span><span className="v">{cls.confidence.toFixed(2)}</span></> : null}
             </div>
           ) : <p className="muted">No classification recorded.</p>}
-          {ev?.report_text ? <><SectionLabel>Report</SectionLabel><pre>{ev.report_text}</pre></> : null}
+          {ev?.report_text ? <><h3 style={{ marginTop: "var(--s-3)" }}>Report</h3><pre>{ev.report_text}</pre></> : null}
         </div>
       </section>
     </div>
