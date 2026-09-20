@@ -5,7 +5,7 @@ Averis × Monash Hackathon 2026 — shipping-document intake for a BPO documenta
 An email arrives. ShipDoc classifies it, parses the attached Shipping Instruction (SI) and draft Bill of Lading (BL), compares the seven fields that matter, and escalates only what a person genuinely needs to look at — **without creating false alarms**.
 
 **Live API:** https://shipdoc-api-705106212012.asia-southeast1.run.app (Cloud Run, Singapore; LLM via Vertex AI)
-**Console:** `web/` — Next.js on Vercel (inbox · diff report with raw → normalised view · exception / incomplete queues · eval dashboard)
+**Console:** https://averis-sdoc-k3ce.vercel.app — `web/`, Next.js on Vercel (inbox · diff report with raw → normalised view · exception / incomplete queues · eval dashboard)
 
 ## Results on the organiser's v2 dataset (520 emails)
 
