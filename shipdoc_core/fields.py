@@ -19,9 +19,11 @@ Domain trap (something we know that other teams may not):
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from enum import Enum
+from pathlib import Path
 
 
 class FieldKind(str, Enum):
@@ -29,6 +31,7 @@ class FieldKind(str, Enum):
     PORT = "port"            # port name, possibly with UN/LOCODE
     COUNT = "count"          # integer
     WEIGHT_KG = "weight_kg"  # float, unit conversion required
+    TEXT = "text"            # identifier-like text (B/L no., booking ref): compared on alphanumerics only
 
 
 class Severity(str, Enum):
@@ -45,98 +48,45 @@ class FieldSpec:
     near_miss_labels: tuple[str, ...] = field(default=())
 
 
-# The seven fields named by the use case - no more, no fewer
-FIELDS: tuple[FieldSpec, ...] = (
-    FieldSpec(
-        key="shipper",
-        label="Shipper",
-        kind=FieldKind.PARTY,
-        severity=Severity.HIGH,
-        aliases=(
-            "shipper", "shipper/exporter", "shipper exporter", "exporter",
-            "consignor", "shipper name", "shipper/consignor", "from",
-            "shipper (principal or seller)", "seller", "shipper principal or seller",
-        ),
-    ),
-    FieldSpec(
-        key="consignee",
-        label="Consignee",
-        kind=FieldKind.PARTY,
-        severity=Severity.HIGH,
-        aliases=(
-            "consignee", "consignee name", "consigned to", "consignee/receiver",
-            "receiver", "to order of", "to the order of", "buyer",
-            "consignee (non-negotiable)", "consignee non negotiable",
-            "consignee (complete name and address)",
-        ),
-    ),
-    FieldSpec(
-        key="notify_party",
-        label="Notify Party",
-        kind=FieldKind.PARTY,
-        severity=Severity.HIGH,
-        aliases=(
-            "notify party", "notify", "notify address", "notify party name",
-            "notify party (if different)", "also notify", "notify applicant",
-            "party to be notified", "notify party/intermediate consignee",
-            "notify party intermediate consignee",
-        ),
-    ),
-    FieldSpec(
-        key="port_of_loading",
-        label="Port of Loading",
-        kind=FieldKind.PORT,
-        severity=Severity.HIGH,
-        aliases=(
-            "port of loading", "load port", "pol", "loading port",
-            "port of load", "port of shipment", "loading",
-            "port of loading (pol)", "port of loading pol",
-        ),
-        near_miss_labels=("place of receipt", "place of acceptance", "pre-carriage from"),
-    ),
-    FieldSpec(
-        key="port_of_discharge",
-        label="Port of Discharge",
-        kind=FieldKind.PORT,
-        severity=Severity.HIGH,
-        aliases=(
-            "port of discharge", "discharge port", "pod", "port of unloading",
-            "discharge", "port of destination", "discharging port",
-            "port of discharge (pod)", "port of discharge pod",
-        ),
-        near_miss_labels=("place of delivery", "final destination", "on-carriage to"),
-    ),
-    FieldSpec(
-        key="container_count",
-        label="Container Count",
-        kind=FieldKind.COUNT,
-        severity=Severity.HIGH,
-        aliases=(
-            "container count", "number of containers", "no. of containers",
-            "no of containers", "total containers", "qty of containers",
-            "quantity of containers", "container qty", "containers",
-            "no. of ctnrs", "total ctns",
-            "no. of containers or packages", "no of containers or packages",
-        ),
-    ),
-    FieldSpec(
-        key="gross_weight_kg",
-        label="Gross Weight (kg)",
-        kind=FieldKind.WEIGHT_KG,
-        severity=Severity.HIGH,
-        aliases=(
-            "gross weight", "gross weight (kgs)", "gross wt", "gross wt.",
-            "g.w.", "gw", "total gross weight", "gross weight kg",
-            "gross weight in kg", "total weight",
-            "gross wt (kgs)", "gross wt kgs", "gross weight (kg)",
-        ),
-        # NET WEIGHT is never GROSS WEIGHT - both appear in the data; confusing them is a false alarm
-        near_miss_labels=("net weight", "net wt", "nett weight", "n.w."),
-    ),
-)
+# The ontology is data, not code: shipdoc_core/fields.json (the seven fields named by the use case).
+# Adding a field is one JSON entry - see load_ontology(); the comparator dispatches on `kind`.
+ONTOLOGY_PATH = Path(__file__).with_name("fields.json")
 
-FIELD_BY_KEY: dict[str, FieldSpec] = {f.key: f for f in FIELDS}
-FIELD_KEYS: tuple[str, ...] = tuple(f.key for f in FIELDS)
+FIELDS: list[FieldSpec] = []                 # mutated in place by load_ontology so every importer sees a reload
+FIELD_BY_KEY: dict[str, FieldSpec] = {}
+FIELD_KEYS: list[str] = []
+_ALIAS_INDEX: dict[str, str] = {}
+_NEAR_MISS_INDEX: dict[str, str] = {}
+
+
+def _spec_from_json(d: dict) -> FieldSpec:
+    try:
+        return FieldSpec(key=d["key"], label=d["label"], kind=FieldKind(d["kind"]), severity=Severity(d.get("severity", "high")),
+                         aliases=tuple(d["aliases"]), near_miss_labels=tuple(d.get("near_miss_labels", ())))
+    except (KeyError, ValueError) as e:
+        raise ValueError(f"ontology entry {d.get('key')!r}: {e}") from None
+
+
+def load_ontology(path: str | Path | None = None) -> list[FieldSpec]:
+    """(Re)load the field ontology from JSON. Validates keys are unique and kinds are known; rebuilds the
+    alias / near-miss indexes in place. Called once at import; tests call it with another file to prove
+    that an eighth field needs no Python change."""
+    raw = json.loads(Path(path or ONTOLOGY_PATH).read_text(encoding="utf-8"))
+    specs = [_spec_from_json(d) for d in raw["fields"]]
+    keys = [f.key for f in specs]
+    if len(set(keys)) != len(keys):
+        raise ValueError(f"ontology: duplicate field keys {keys}")
+    FIELDS[:] = specs
+    FIELD_BY_KEY.clear(); FIELD_BY_KEY.update({f.key: f for f in specs})
+    FIELD_KEYS[:] = keys
+    _ALIAS_INDEX.clear(); _NEAR_MISS_INDEX.clear()
+    for f in specs:
+        for a in f.aliases:
+            _ALIAS_INDEX[_norm_label(a)] = f.key
+        for n in f.near_miss_labels:
+            _NEAR_MISS_INDEX[_norm_label(n)] = f.key
+    return specs
+
 
 
 def _is_cjk(ch: str) -> bool:
@@ -154,13 +104,8 @@ def _norm_label(s: str) -> str:
     )
 
 
-_ALIAS_INDEX: dict[str, str] = {}
-_NEAR_MISS_INDEX: dict[str, str] = {}
-for _f in FIELDS:
-    for _a in _f.aliases:
-        _ALIAS_INDEX[_norm_label(_a)] = _f.key
-    for _n in _f.near_miss_labels:
-        _NEAR_MISS_INDEX[_norm_label(_n)] = _f.key
+load_ontology()
+
 
 
 # Qualifiers that precede a field label without changing its meaning

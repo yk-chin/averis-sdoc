@@ -1,0 +1,157 @@
+{
+  "$comment": "ShipDoc field ontology. The seven fields named by the use case. Adding a field = one entry here: key, label, kind (party | port | count | weight_kg | text), severity, aliases (labels that mean this field), near_miss_labels (labels that look like it but are a different field - never merged, a note is raised).",
+  "fields": [
+    {
+      "key": "shipper",
+      "label": "Shipper",
+      "kind": "party",
+      "severity": "high",
+      "aliases": [
+        "shipper",
+        "shipper/exporter",
+        "shipper exporter",
+        "exporter",
+        "consignor",
+        "shipper name",
+        "shipper/consignor",
+        "from",
+        "shipper (principal or seller)",
+        "seller",
+        "shipper principal or seller"
+      ],
+      "near_miss_labels": []
+    },
+    {
+      "key": "consignee",
+      "label": "Consignee",
+      "kind": "party",
+      "severity": "high",
+      "aliases": [
+        "consignee",
+        "consignee name",
+        "consigned to",
+        "consignee/receiver",
+        "receiver",
+        "to order of",
+        "to the order of",
+        "buyer",
+        "consignee (non-negotiable)",
+        "consignee non negotiable",
+        "consignee (complete name and address)"
+      ],
+      "near_miss_labels": []
+    },
+    {
+      "key": "notify_party",
+      "label": "Notify Party",
+      "kind": "party",
+      "severity": "high",
+      "aliases": [
+        "notify party",
+        "notify",
+        "notify address",
+        "notify party name",
+        "notify party (if different)",
+        "also notify",
+        "notify applicant",
+        "party to be notified",
+        "notify party/intermediate consignee",
+        "notify party intermediate consignee"
+      ],
+      "near_miss_labels": []
+    },
+    {
+      "key": "port_of_loading",
+      "label": "Port of Loading",
+      "kind": "port",
+      "severity": "high",
+      "aliases": [
+        "port of loading",
+        "load port",
+        "pol",
+        "loading port",
+        "port of load",
+        "port of shipment",
+        "loading",
+        "port of loading (pol)",
+        "port of loading pol"
+      ],
+      "near_miss_labels": [
+        "place of receipt",
+        "place of acceptance",
+        "pre-carriage from"
+      ]
+    },
+    {
+      "key": "port_of_discharge",
+      "label": "Port of Discharge",
+      "kind": "port",
+      "severity": "high",
+      "aliases": [
+        "port of discharge",
+        "discharge port",
+        "pod",
+        "port of unloading",
+        "discharge",
+        "port of destination",
+        "discharging port",
+        "port of discharge (pod)",
+        "port of discharge pod"
+      ],
+      "near_miss_labels": [
+        "place of delivery",
+        "final destination",
+        "on-carriage to"
+      ]
+    },
+    {
+      "key": "container_count",
+      "label": "Container Count",
+      "kind": "count",
+      "severity": "high",
+      "aliases": [
+        "container count",
+        "number of containers",
+        "no. of containers",
+        "no of containers",
+        "total containers",
+        "qty of containers",
+        "quantity of containers",
+        "container qty",
+        "containers",
+        "no. of ctnrs",
+        "total ctns",
+        "no. of containers or packages",
+        "no of containers or packages"
+      ],
+      "near_miss_labels": []
+    },
+    {
+      "key": "gross_weight_kg",
+      "label": "Gross Weight (kg)",
+      "kind": "weight_kg",
+      "severity": "high",
+      "aliases": [
+        "gross weight",
+        "gross weight (kgs)",
+        "gross wt",
+        "gross wt.",
+        "g.w.",
+        "gw",
+        "total gross weight",
+        "gross weight kg",
+        "gross weight in kg",
+        "total weight",
+        "gross wt (kgs)",
+        "gross wt kgs",
+        "gross weight (kg)"
+      ],
+      "near_miss_labels": [
+        "net weight",
+        "net wt",
+        "nett weight",
+        "n.w."
+      ]
+    }
+  ]
+}

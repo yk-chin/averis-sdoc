@@ -27,3 +27,4 @@
 {"ts": "2026-09-20T03:48:12", "sha": "575920e", "final_score": 1.0, "stage1_macro_f1": 1.0, "defect_f1": 1.0, "end_to_end": 1.0, "esc_precision": 1.0}
 {"ts": "2026-09-20T04:14:25", "sha": "e1034d3", "final_score": 1.0, "stage1_macro_f1": 1.0, "defect_f1": 1.0, "end_to_end": 1.0, "esc_precision": 1.0}
 {"ts": "2026-09-20T19:07:51", "sha": "d3af959", "final_score": 1.0, "stage1_macro_f1": 1.0, "defect_f1": 1.0, "end_to_end": 1.0, "esc_precision": 1.0}
+{"ts": "2026-09-20T19:10:11", "sha": "2f6d578", "final_score": 1.0, "stage1_macro_f1": 1.0, "defect_f1": 1.0, "end_to_end": 1.0, "esc_precision": 1.0}

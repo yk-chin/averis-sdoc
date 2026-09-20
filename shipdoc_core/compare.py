@@ -143,6 +143,13 @@ def compare_field(
             return mk(Outcome.NORMALIZED_MATCH, da, db, f"same port ({why})", 0.97)
         return mk(Outcome.MISMATCH, da, db, f"different port ({why})", 0.95)
 
+    # ---------------- TEXT (config-only fields, e.g. bl_number) ----------------
+    if spec.kind is FieldKind.TEXT:
+        a, b = _norm_text(str(si_raw)), _norm_text(str(bl_raw))
+        if a == b:
+            return mk(Outcome.NORMALIZED_MATCH, a, b, "same text, different spacing/case/punctuation", 0.97)
+        return mk(Outcome.MISMATCH, a, b, f"{spec.label.lower()} differs: SI {a} / BL {b}", 0.95)
+
     # ---------------- COUNT ----------------
     if spec.kind is FieldKind.COUNT:
         a, b = normalize_count(si_raw), normalize_count(bl_raw)
@@ -201,6 +208,12 @@ class ComparisonReport:
         if self.needs_human_review:
             lines.append(f"  -> escalated for human review: {'; '.join(self.review_reasons)}")
         return "\n".join(lines)
+
+
+def _norm_text(s: str) -> str:
+    """Identifier-like text (B/L number, booking reference, vessel/voyage): case, spaces and punctuation are
+    formatting, never a mismatch - only the alphanumerics carry meaning ("MAEU 123-456" == "maeu123456")."""
+    return "".join(ch for ch in basic_clean(s).upper() if ch.isalnum())
 
 
 def compare_documents(

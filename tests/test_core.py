@@ -10,7 +10,7 @@ from shipdoc_core.evaluate import (prf, classification_report, field_level_prf,
 
 # ---------- field ontology ----------
 def test_seven_fields():
-    assert FIELD_KEYS == ("shipper","consignee","notify_party","port_of_loading",
+    assert tuple(FIELD_KEYS) == ("shipper","consignee","notify_party","port_of_loading",
                           "port_of_discharge","container_count","gross_weight_kg")
 
 def test_alias_resolution():
