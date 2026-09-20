@@ -171,8 +171,11 @@ td a.row-link{color:inherit;font-weight:500}
 .empty{padding:var(--s-8) var(--s-6);text-align:center;color:var(--text-3);font-size:14px}
 .empty .ic-xl{display:block;margin:0 auto var(--s-3);color:var(--text-3)}
 .ellipsis{max-width:36ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.inbox table{table-layout:fixed;min-width:840px}
-td.cut{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* ellipsis lives on an inner span: a nowrap <td> would set its own min width to the full text and
+   push the last columns out of the wrap */
+.cut{display:block;max-width:22ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cut.wide{max-width:30ch}
+.tight{white-space:nowrap}
 .inbox td .chips{gap:var(--s-1)}
 
 pre{margin:0;background:var(--card-2);border:1px solid var(--line);border-radius:var(--r-m);padding:var(--s-4);

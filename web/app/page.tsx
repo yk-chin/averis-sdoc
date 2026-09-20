@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { fetchReports } from "@/lib/api";
 import { Inbox } from "@/components/Inbox";
 
@@ -22,7 +23,7 @@ export default async function InboxPage() {
           <div className="stat warn"><span className="v">{n("NEEDS_REVIEW")}</span><span className="k">needs review</span></div>
         </div>
       </div>
-      <Inbox rows={items} />
+      <Suspense fallback={null}><Inbox rows={items} /></Suspense>
     </>
   );
 }

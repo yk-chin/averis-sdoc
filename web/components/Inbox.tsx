@@ -1,17 +1,42 @@
 "use client";
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { CATEGORIES, STATUSES, type Category, type ReportRow, type Status } from "@/lib/types";
 import { CATEGORY_LABEL, REASON_LABEL, STATUS_LABEL } from "@/lib/format";
 import { Chip } from "./Chip";
 import { Icon } from "./Icon";
 
+/* Filters live in the URL (?category=&status=&q=) so Back, reload and shared links keep them;
+   rows carry the current query along (?from=) so the detail page can return to the same view. */
+const isCat = (v: string | null): v is Category => !!v && (CATEGORIES as string[]).includes(v);
+const isStatus = (v: string | null): v is Status => !!v && (STATUSES as string[]).includes(v);
+
 export function Inbox({ rows }: { rows: ReportRow[] }) {
   const router = useRouter();
-  const [cat, setCat] = useState<Category | null>(null);
-  const [status, setStatus] = useState<Status | null>(null);
-  const [q, setQ] = useState("");
+  const pathname = usePathname();
+  const sp = useSearchParams();
+  const cat = isCat(sp.get("category")) ? (sp.get("category") as Category) : null;
+  const status = isStatus(sp.get("status")) ? (sp.get("status") as Status) : null;
+  const q = sp.get("q") ?? "";
+  const [draft, setDraft] = useState(q);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const setParams = (patch: Record<string, string | null>) => {
+    const next = new URLSearchParams(sp.toString());
+    for (const [k, v] of Object.entries(patch)) (v ? next.set(k, v) : next.delete(k));
+    const s = next.toString();
+    router.replace(s ? `${pathname}?${s}` : pathname, { scroll: false });
+  };
+  const setCat = (c: Category | null) => setParams({ category: c });
+  const setStatus = (s: Status | null) => setParams({ status: s });
+  useEffect(() => setDraft(q), [q]);
+  const setQ = (v: string) => {
+    setDraft(v);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setParams({ q: v.trim() || null }), 150);
+  };
+  const from = sp.toString();
+  const detail = (id: string) => `/emails/${id}${from ? `?from=${encodeURIComponent(from)}` : ""}`;
 
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
@@ -34,7 +59,7 @@ export function Inbox({ rows }: { rows: ReportRow[] }) {
         <label className="search">
           <Icon name="magnifyingglass" />
           <span className="sr">Search</span>
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search email_id, subject, sender" spellCheck={false} />
+          <input value={draft} onChange={(e) => setQ(e.target.value)} placeholder="Search email_id, subject, sender" spellCheck={false} />
         </label>
         <div className="seg" role="group" aria-label="Status">
           <button type="button" aria-pressed={status === null} onClick={() => setStatus(null)}>All</button>
@@ -54,18 +79,17 @@ export function Inbox({ rows }: { rows: ReportRow[] }) {
 
       <div className="table-wrap inbox">
         <table>
-          <colgroup><col style={{ width: "11%" }} /><col style={{ width: "18%" }} /><col style={{ width: "29%" }} /><col style={{ width: "13%" }} /><col style={{ width: "17%" }} /><col style={{ width: "6%" }} /><col style={{ width: "6%" }} /></colgroup>
           <thead>
-            <tr><th>email_id</th><th>From</th><th>Subject</th><th>Category</th><th>Status</th><th className="num">Att.</th><th>Decided by</th></tr>
+            <tr><th className="tight">email_id</th><th>From</th><th>Subject</th><th className="tight">Category</th><th>Status</th><th className="num tight">Att.</th><th className="tight">Decided by</th></tr>
           </thead>
           <tbody>
             {shown.length === 0 ? (
               <tr><td colSpan={7}><div className="empty"><Icon name="tray" size={24} />No emails match these filters.</div></td></tr>
             ) : shown.map((r) => (
-              <tr key={r.key} className="link" onClick={() => router.push(`/emails/${r.email_id}`)}>
-                <td className="mono"><Link className="row-link" href={`/emails/${r.email_id}`} onClick={(e) => e.stopPropagation()}>{r.email_id}</Link></td>
-                <td className="cut" title={r.from ?? ""}>{r.from ?? "—"}</td>
-                <td className="cut" title={r.subject ?? ""}>{r.subject ?? "—"}</td>
+              <tr key={r.key} className="link" onClick={() => router.push(detail(r.email_id))}>
+                <td className="mono tight"><Link className="row-link" href={detail(r.email_id)} onClick={(e) => e.stopPropagation()}>{r.email_id}</Link></td>
+                <td><span className="cut" title={r.from ?? ""}>{r.from ?? "—"}</span></td>
+                <td><span className="cut wide" title={r.subject ?? ""}>{r.subject ?? "—"}</span></td>
                 <td>{r.category ? <Chip small>{CATEGORY_LABEL[r.category]}</Chip> : <Chip small status={r.report_status}>{r.report_status}</Chip>}</td>
                 <td>
                   <span className="chips">
@@ -74,8 +98,8 @@ export function Inbox({ rows }: { rows: ReportRow[] }) {
                     {r.defect_fields.length ? <Chip small status="MISMATCH">{r.defect_fields.join(", ")}</Chip> : null}
                   </span>
                 </td>
-                <td className="num">{r.attachments ? <><Icon name="paperclip" /> {r.attachments}</> : <span className="meta">—</span>}</td>
-                <td className="muted">{r.decided_by ?? "—"}</td>
+                <td className="num tight">{r.attachments ? <><Icon name="paperclip" /> {r.attachments}</> : <span className="meta">—</span>}</td>
+                <td className="muted tight">{r.decided_by ?? "—"}</td>
               </tr>
             ))}
           </tbody>

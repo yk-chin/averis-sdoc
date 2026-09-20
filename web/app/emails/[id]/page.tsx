@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { fetchReport } from "@/lib/api";
 import { CATEGORY_LABEL, REASON_LABEL, STATUS_LABEL, fmtRaw, fmtTime } from "@/lib/format";
@@ -7,6 +7,7 @@ import type { AttachmentEvidence } from "@/lib/types";
 import { Board } from "@/components/Board";
 import { Chip } from "@/components/Chip";
 import { Icon } from "@/components/Icon";
+import { BackLink } from "@/components/BackLink";
 
 export const revalidate = 15;
 
@@ -30,7 +31,7 @@ export default async function EmailPage({ params }: { params: Promise<{ id: stri
   return (
     <div className="sections">
       <header className="stack-s reveal">
-        <Link href="/" className="hint" style={{ width: "fit-content" }}><Icon name="arrow.left" />Inbox</Link>
+        <Suspense fallback={<span className="hint" style={{ width: "fit-content" }}><Icon name="arrow.left" />Inbox</span>}><BackLink /></Suspense>
         <h1 style={{ fontSize: 32 }}>{email?.subject || rep.email_id}</h1>
         <p className="muted">
           <span className="mono">{rep.email_id}</span>{email?.from ? <> · from {email.from}</> : null} · processed {fmtTime(rep.updated)}
