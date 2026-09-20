@@ -236,7 +236,7 @@ def test_reports_lists_slim_rows_with_email_header_and_filters():
     by_id = {x["email_id"]: x for x in rows["items"]}
     for eid in ("ls-1", "ls-2"):
         row = by_id[eid]
-        assert row["subject"] == "TO CONFIRM DOCS" and row["from"] == "a@b" and row["attachments"] == 2
+        assert row["subject"] == "TO CONFIRM DOCS" and row["from"] == "a***@b" and row["attachments"] == 2   # masked in public rows
         assert row["category"] == "BL_COMPARISON" and row["status"] == "MISMATCH" and row["defect_fields"] == ["container_count"]
         assert row["report_status"] == "DONE" and row["decided_by"] == "rule"
         assert "evidence" not in row and "body" not in row and "result" not in row
@@ -248,3 +248,70 @@ def test_reports_lists_slim_rows_with_email_header_and_filters():
     rep = client.get("/report/ls-2").json()
     assert rep["email"]["subject"] == "TO CONFIRM DOCS" and "Attached are the SI" in rep["email"]["body"]
     assert rep["email"]["attachments"] == ["ls-2_SI.txt", "ls-2_BL.txt"]
+
+
+# ---------------------------------------------------------------- observability, masking, review identity
+def test_request_id_is_echoed_and_persisted():
+    from fastapi.testclient import TestClient
+    import api.main as m
+    m.store = MemoryStore()
+    client = TestClient(m.app)
+    r = client.post("/process", json=_email("rid-1"), headers={"X-Request-Id": "trace-abc-123"})
+    assert r.headers["X-Request-Id"] == "trace-abc-123" and r.json()["request_id"] == "trace-abc-123"
+    assert client.get("/report/rid-1").json()["request_id"] == "trace-abc-123"
+    r2 = client.get("/health")
+    assert len(r2.headers["X-Request-Id"]) == 32                       # minted when absent
+    r3 = client.get("/health", headers={"X-Request-Id": "bad id with spaces"})
+    assert r3.headers["X-Request-Id"] != "bad id with spaces"          # unsafe ids are replaced
+
+
+def test_public_responses_mask_sender_addresses():
+    from fastapi.testclient import TestClient
+    import api.main as m
+    m.store = MemoryStore()
+    client = TestClient(m.app)
+    e = _email("mask-1"); e["from"] = "arlene_yamomo@example.com"
+    client.post("/process", json=e)
+    assert client.get("/reports").json()["items"][0]["from"] == "a***@example.com"
+    assert client.get("/report/mask-1").json()["email"]["from"] == "a***@example.com"
+    assert m.store.get(REPORTS, idempotency_key(e))["email"]["from"] == "arlene_yamomo@example.com"   # stored intact
+    assert m._mask_email("nobody") == "nobody" and m._mask_email(None) is None
+
+
+def test_review_identity_review_key_vs_api_key(monkeypatch):
+    from fastapi.testclient import TestClient
+    import api.main as m
+    monkeypatch.setattr(m, "API_TOKEN", "secret")
+    monkeypatch.setattr(m, "REVIEW_TOKEN", "review-only")
+    m.store = MemoryStore()
+    client = TestClient(m.app)
+    key = client.post("/process", json=_email("id-1")).json()["key"]
+    body = {"decision": "confirmed", "reviewer": "ops"}
+    assert client.post(f"/report/{key}/review", json=body).status_code == 401
+    assert client.post(f"/report/{key}/review", json=body, headers={"X-API-Key": "wrong"}).status_code == 401
+    r = client.post(f"/report/{key}/review", json=body, headers={"X-API-Key": "review-only"})
+    assert r.status_code == 200 and r.json()["review"]["identity"] == {"method": "review-key", "verified": False}
+    assert r.json()["review"]["reviewer"] == "ops"
+    r = client.post(f"/report/{key}/review", json=body, headers={"X-API-Key": "secret"})
+    assert r.json()["review"]["identity"]["method"] == "api-key"
+    # the review-only credential cannot do anything else
+    assert client.post("/batch", json={"emails": [_email("b")]}, headers={"X-API-Key": "review-only"}).status_code == 401
+    assert client.get("/failures", headers={"X-API-Key": "review-only"}).status_code == 401
+    # a bearer token that does not verify is rejected, never trusted
+    assert client.post(f"/report/{key}/review", json=body, headers={"Authorization": "Bearer not-a-token"}).status_code == 401
+
+
+def test_review_oidc_identity_overrides_asserted_reviewer(monkeypatch):
+    from fastapi.testclient import TestClient
+    import api.main as m
+    monkeypatch.setattr(m, "API_TOKEN", "secret")
+    m.store = MemoryStore()
+    client = TestClient(m.app)
+    key = client.post("/process", json=_email("id-2")).json()["key"]
+    import google.oauth2.id_token as idt
+    monkeypatch.setattr(idt, "verify_oauth2_token", lambda token, req, audience: {"email": "reviewer@example.com"})
+    r = client.post(f"/report/{key}/review", json={"decision": "confirmed", "reviewer": "impostor"},
+                    headers={"Authorization": "Bearer good"})
+    assert r.status_code == 200
+    rev = r.json()["review"]
+    assert rev["reviewer"] == "reviewer@example.com" and rev["identity"] == {"method": "oidc", "verified": True, "email": "reviewer@example.com"}

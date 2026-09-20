@@ -30,7 +30,7 @@ Failure handling ("handle processing failures visibly and allow retries"):
   same email never produces a second report.
 """
 from __future__ import annotations
-import base64, collections, os, pathlib, sys, tempfile, threading, time, uuid
+import base64, collections, json, logging, os, pathlib, re, sys, tempfile, threading, time, uuid
 from typing import Any, Literal, Optional
 
 from fastapi import FastAPI, Header, HTTPException, Request
@@ -49,6 +49,7 @@ from api import tasks as taskmod                                                
 
 APP_VERSION = os.getenv("APP_VERSION", "dev")
 API_TOKEN = os.getenv("API_TOKEN", "").strip()
+REVIEW_TOKEN = os.getenv("REVIEW_TOKEN", "").strip()       # review-only credential: cannot batch, retry or chaos
 MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
 RATE_LIMIT_PER_MIN = int(os.getenv("RATE_LIMIT_PER_MIN", "10"))   # anonymous POST /process, per client IP
 KEYED_ENDPOINTS = ["POST /batch", "GET /failures", "GET /failures/{key}", "POST /failures/{key}/retry",
@@ -62,6 +63,37 @@ app.mount("/static", StaticFiles(directory=str(ROOT / "api" / "static")), name="
 
 store = make_store()
 _started = time.time()
+_log = logging.getLogger("shipdoc.api")
+_log.setLevel(logging.INFO)
+if not _log.handlers:                                      # one JSON line per request on stdout: Cloud Logging
+    _h = logging.StreamHandler(sys.stdout); _h.setFormatter(logging.Formatter("%(message)s")); _log.addHandler(_h)
+_REQ_ID_OK = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+
+
+@app.middleware("http")
+async def _request_context(request: Request, call_next):
+    """Correlation id: honour an incoming X-Request-Id (so a caller can trace across systems), otherwise mint
+    one; echo it on the response; log one structured line per request. request.state.request_id is read by
+    the handlers that persist reports so a Firestore document can be traced back to its request."""
+    rid = request.headers.get("x-request-id", "")
+    if not _REQ_ID_OK.match(rid):
+        rid = uuid.uuid4().hex
+    request.state.request_id = rid
+    t0 = time.time()
+    try:
+        response = await call_next(request)
+    except Exception as exc:                            # noqa: BLE001 - logged with the id, then re-raised
+        _log.info(json.dumps({"severity": "ERROR", "request_id": rid, "method": request.method,
+                              "path": request.url.path, "error": f"{type(exc).__name__}: {exc}",
+                              "elapsed_ms": round((time.time() - t0) * 1000)}))
+        raise
+    response.headers["X-Request-Id"] = rid
+    if request.url.path not in ("/health", "/", "/favicon.ico") and not request.url.path.startswith("/static"):
+        _log.info(json.dumps({"severity": "INFO" if response.status_code < 500 else "ERROR", "request_id": rid,
+                              "method": request.method, "path": request.url.path, "status": response.status_code,
+                              "elapsed_ms": round((time.time() - t0) * 1000),
+                              "email_id": getattr(request.state, "email_id", None)}))
+    return response
 
 
 # ----------------------------------------------------------------------------- models
@@ -99,6 +131,35 @@ class ReviewIn(BaseModel):
 def _check_key(x_api_key: Optional[str]) -> None:
     if API_TOKEN and x_api_key != API_TOKEN:
         raise HTTPException(status_code=401, detail="missing or invalid X-API-Key")
+
+
+def _mask_email(addr: Optional[str]) -> Optional[str]:
+    """Public responses never show a full mailbox: first character + *** + domain. Stored data is untouched."""
+    if not addr or "@" not in addr:
+        return addr
+    local, domain = addr.split("@", 1)
+    return f"{local[:1]}***@{domain}"
+
+
+def _review_identity(request: Request, x_api_key: Optional[str], authorization: Optional[str]) -> dict:
+    """Who is reviewing, and how sure we are. Two paths:
+       - Authorization: Bearer <Google OIDC id token>  -> reviewer = the token's verified email (production path)
+       - X-API-Key = REVIEW_TOKEN (review-only) or API_TOKEN -> the client-asserted reviewer name is recorded as
+         such (identity.verified = false). Without any token configured (local dev) the request is open."""
+    if authorization and authorization.lower().startswith("bearer "):
+        try:
+            from google.auth.transport import requests as ga_requests
+            from google.oauth2 import id_token
+            claims = id_token.verify_oauth2_token(authorization.split(" ", 1)[1].strip(), ga_requests.Request(),
+                                                  audience=os.getenv("SERVICE_URL") or str(request.base_url).rstrip("/"))
+        except Exception as exc:                        # noqa: BLE001
+            raise HTTPException(401, f"invalid bearer token: {type(exc).__name__}")
+        return {"method": "oidc", "verified": True, "email": claims.get("email")}
+    if not API_TOKEN and not REVIEW_TOKEN:
+        return {"method": "none", "verified": False}
+    if x_api_key and x_api_key in {t for t in (REVIEW_TOKEN, API_TOKEN) if t}:
+        return {"method": "review-key" if x_api_key == REVIEW_TOKEN and REVIEW_TOKEN else "api-key", "verified": False}
+    raise HTTPException(401, "review needs X-API-Key (review token) or a Google OIDC bearer token")
 
 
 # Per-IP sliding window for the anonymous endpoint. Standard library only; state is per instance,
@@ -189,6 +250,7 @@ def health(deep: int = 0):
         "status": "ok", "version": APP_VERSION, "uptime_s": round(time.time() - _started),
         "llm_provider": os.getenv("LLM_PROVIDER") or "(disabled)",
         "api_key_required_for": KEYED_ENDPOINTS if API_TOKEN else [],
+        "review_auth": "oidc or review token" if (API_TOKEN or REVIEW_TOKEN) else "open (no token configured)",
         "anonymous_rate_limit_per_min": RATE_LIMIT_PER_MIN,
         "tasks_mode": os.getenv("TASKS_MODE", "inline"), "store": os.getenv("STORE", "memory"),
         "max_attempts": taskmod.MAX_ATTEMPTS, "chaos_enabled": bool(chaos.get("enabled")),
@@ -207,14 +269,16 @@ def health(deep: int = 0):
 def process(email: EmailIn, request: Request):
     _rate_limit(request)
     e = _email_dict(email)
+    request.state.email_id = e["email_id"]
     try:
         result = _process_email(e)
     except ValueError as ex:
         raise HTTPException(422, str(ex))
     key = idempotency_key(e)
     store.set(REPORTS, key, {"status": "DONE", "email_id": e["email_id"], "key": key, "result": result,
-                             "email": _email_summary(e), "attempts": 1, "error": None, "updated": now()})
-    return dict(result, key=key)
+                             "email": _email_summary(e), "attempts": 1, "error": None, "updated": now(),
+                             "request_id": request.state.request_id})
+    return dict(result, key=key, request_id=request.state.request_id)
 
 
 @app.post("/batch", summary="Enqueue one Cloud Tasks task per email; returns immediately (X-API-Key required)")
@@ -235,7 +299,7 @@ def batch(payload: BatchIn, request: Request, x_api_key: Optional[str] = Header(
             continue
         store.set(REPORTS, key, {"status": "QUEUED", "email_id": e["email_id"], "key": key, "batch_id": batch_id,
                                  "email": _email_summary(e), "attempts": 0, "error": None, "result": None,
-                                 "updated": now()})
+                                 "updated": now(), "request_id": request.state.request_id})
         ref = taskmod.enqueue(ctx, {"key": key, "batch_id": batch_id, "email": e})
         items.append({"email_id": e["email_id"], "key": key, "status": "queued", "task": ref})
     queued = sum(1 for i in items if i["status"] == "queued")
@@ -293,7 +357,7 @@ def _report_row(r: dict) -> dict:
     res = r.get("result") or {}
     d = res.get("decision") or {}
     em = r.get("email") or {}
-    return {"key": r.get("key") or r.get("id"), "email_id": r.get("email_id"), "from": em.get("from"),
+    return {"key": r.get("key") or r.get("id"), "email_id": r.get("email_id"), "from": _mask_email(em.get("from")),
             "subject": em.get("subject"), "attachments": len(em.get("attachments") or []),
             "report_status": r.get("status"), "category": d.get("category"), "status": d.get("status"),
             "review_reason": d.get("review_reason"), "review_detail": res.get("review_detail") or [],
@@ -326,17 +390,22 @@ def reports(limit: int = 1000, category: Optional[str] = None, status: Optional[
 def report(ident: str):
     key, r = _find_report(ident)
     r.pop("traceback", None)                         # never part of a public response
+    if r.get("email"):
+        r["email"] = dict(r["email"], **{"from": _mask_email(r["email"].get("from"))})
     r["key"] = key
     r["effective_decision"] = _effective_decision(r)
     return r
 
 
-@app.post("/report/{ident}/review", summary="Human review: confirm or correct the AI decision (X-API-Key required)")
-def review_report(ident: str, body: ReviewIn, x_api_key: Optional[str] = Header(default=None)):
+@app.post("/report/{ident}/review", summary="Human review: confirm or correct the AI decision (review token or OIDC)")
+def review_report(ident: str, body: ReviewIn, request: Request, x_api_key: Optional[str] = Header(default=None),
+                  authorization: Optional[str] = Header(default=None)):
     """Persists an audit trail next to the report - original_ai_decision / human_decision / corrections /
-    reviewed_at / reviewer - and never overwrites the AI's result. Not used by the pipeline or by
-    submission.json; it only changes what /report shows as effective_decision."""
-    _check_key(x_api_key)
+    reviewed_at / reviewer / identity - and never overwrites the AI's result. Not used by the pipeline or by
+    submission.json; it only changes what /report shows as effective_decision.
+    identity says how the reviewer was established: an OIDC bearer token (verified email, overrides the body's
+    reviewer) or a review key (client-asserted name, recorded as unverified)."""
+    identity = _review_identity(request, x_api_key, authorization)
     key, r = _find_report(ident)
     ai = (r.get("result") or {}).get("decision")
     if ai is None:
@@ -351,8 +420,10 @@ def review_report(ident: str, body: ReviewIn, x_api_key: Optional[str] = Header(
         "human_decision": body.decision,
         "corrections": dict(body.corrected_fields) if body.decision == "corrected" else {},
         "reviewer_note": body.reviewer_note,
-        "reviewer": body.reviewer,
+        "reviewer": identity.get("email") or body.reviewer,
+        "identity": identity,
         "reviewed_at": now(),
+        "request_id": request.state.request_id,
     }
     store.update(REPORTS, key, {"review": review, "updated": now()})
     r = store.get(REPORTS, key) or dict(r, review=review)
