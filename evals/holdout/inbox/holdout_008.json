@@ -1,0 +1,10 @@
+{
+  "email_id": "holdout_008",
+  "from": "docs@deltanile.example",
+  "subject": "RE: DRAFT BL CHECK _ HO-40007",
+  "body": "Hi team,\n\nPlease find attached the SI and the draft BL for booking HO-40007. Kindly compare and confirm the draft is in order before cut-off.\n\nRegards",
+  "attachments": [
+    "attachments/holdout_008_doc1.txt",
+    "attachments/holdout_008_doc2.txt"
+  ]
+}

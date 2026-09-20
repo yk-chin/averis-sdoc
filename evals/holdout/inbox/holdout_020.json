@@ -1,0 +1,9 @@
+{
+  "email_id": "holdout_020",
+  "from": "traffic@mapleleafpkg.example",
+  "subject": "RE: draft BL for checking _ HO-42001",
+  "body": "Dear team,\n\nKindly check the SI vs the draft B/L attached and let us know.\n\nRegards",
+  "attachments": [
+    "attachments/holdout_020_SI.txt"
+  ]
+}

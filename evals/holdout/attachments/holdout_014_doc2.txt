@@ -1,0 +1,13 @@
+BILL OF LADING (DRAFT)
+Booking Ref: HO-41193
+
+Shipper: LOTUS PAPER TRADING COMPANY LIMITED
+Consignee: KAISEI KOGYO KABUSHIKI KAISHA
+Notify Party: PAPELES DEL PACIFICO SA DE CV
+Port of Loading: KOBE
+Port of Discharge: CHITTAGONG
+Number of Containers: 16
+Gross Weight (KGS): 128.000 MT
+
+Vessel/Voyage: MV HOLDOUT STAR 48W
+Freight: COLLECT

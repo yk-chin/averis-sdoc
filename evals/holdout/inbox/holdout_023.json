@@ -1,0 +1,10 @@
+{
+  "email_id": "holdout_023",
+  "from": "logistikk@nordvest.example",
+  "subject": "RE: BL DRAFT HO-42004",
+  "body": "Hi,\n\nAttached SI and draft BL. Please check all details.\n\nRegards",
+  "attachments": [
+    "attachments/holdout_023_SI.txt",
+    "attachments/holdout_023_BL.txt"
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "email_id": "holdout_014",
+  "from": "docs@kaisei-kogyo.example",
+  "subject": "DRAFT B/L _ HO-41003 _ CHITTAGONG",
+  "body": "Hi,\n\nSee attached SI + draft BL for shipment HO-41003. Confirm or advise amendments.\n\nRgds",
+  "attachments": [
+    "attachments/holdout_014_doc1.txt",
+    "attachments/holdout_014_doc2.txt"
+  ]
+}

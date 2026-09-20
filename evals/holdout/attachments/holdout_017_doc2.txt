@@ -1,0 +1,13 @@
+BILL OF LADING (DRAFT)
+Booking Ref: HO-10623
+
+Shipper: MAPLE LEAF PACKAGING INCORPORATED
+Consignee: SOUTHERN CROSS FIBRE PTY. LTD.
+Notify Party: CARTIERE ADRIATICHE SPA
+Port of Loading: MELBOURNE
+Port of Discharge: LE HAVRE
+Number of Containers: 7
+Gross Weight (KGS): 233,200 KG
+
+Vessel/Voyage: MV HOLDOUT STAR 76W
+Freight: COLLECT

@@ -1,0 +1,13 @@
+BILL OF LADING (DRAFT)
+Booking Ref: HO-38496
+
+Shipper: LOTUS PAPER TRADING COMPANY LIMITED
+Consignee: DELTA NILE TRADING L.L.C.
+Notify Party: ANADOLU KAGIT SANAYI A.S.
+Port of Loading: COLOMBO
+Port of Discharge: DURBAN
+Number of Containers: 9
+Gross Weight (KGS): 177.000 MT
+
+Vessel/Voyage: MV HOLDOUT STAR 95W
+Freight: COLLECT

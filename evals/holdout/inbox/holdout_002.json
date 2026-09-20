@@ -1,0 +1,10 @@
+{
+  "email_id": "holdout_002",
+  "from": "spedizioni@cartiereadriatiche.example",
+  "subject": "RE: DRAFT BL FOR CONFIRMATION _ HO-40001",
+  "body": "Hi,\n\nSee attached SI + draft BL for shipment HO-40001. Confirm or advise amendments.\n\nRgds",
+  "attachments": [
+    "attachments/holdout_002_SI.txt",
+    "attachments/holdout_002_BL.txt"
+  ]
+}

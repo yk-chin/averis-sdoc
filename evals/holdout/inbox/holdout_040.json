@@ -1,0 +1,7 @@
+{
+  "email_id": "holdout_040",
+  "from": "promo@free-cargo-prize.example",
+  "subject": "Congratulations! You won a free shipment",
+  "body": "Click here to claim your prize: http://free-cargo-prize.example/claim\n\nLimited time!",
+  "attachments": []
+}

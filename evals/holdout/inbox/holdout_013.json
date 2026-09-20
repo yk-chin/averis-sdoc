@@ -1,0 +1,10 @@
+{
+  "email_id": "holdout_013",
+  "from": "shipping@southerncrossfibre.example",
+  "subject": "DRAFT B/L _ HO-41002 _ MANZANILLO",
+  "body": "Hi,\n\nSee attached SI + draft BL for shipment HO-41002. Confirm or advise amendments.\n\nRgds",
+  "attachments": [
+    "attachments/holdout_013_SI.txt",
+    "attachments/holdout_013_BL.txt"
+  ]
+}

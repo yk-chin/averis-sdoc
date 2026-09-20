@@ -1,0 +1,13 @@
+BILL OF LADING (DRAFT)
+Booking Ref: HO-52283
+
+Shipper: MUELLER PAPIER GMBH & CO. KG
+Consignee: LOTUS PAPER TRADING COMPANY LIMITED
+Notify Party: HARBOUR VIEW LOGISTICS BV
+Port of Loading: ALEXANDRIA
+Port of Discharge: SANTOS
+Number of Containers: 1
+Gross Weight (KGS): 228,025 KG
+
+Vessel/Voyage: MV HOLDOUT STAR 48W
+Freight: PREPAID

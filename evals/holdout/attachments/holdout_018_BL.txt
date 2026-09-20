@@ -1,0 +1,13 @@
+BILL OF LADING (DRAFT)
+Booking Ref: HO-65489
+
+Shipper 发货人: MAPLE LEAF PACKAGING INCORPORATED
+Consignee 收货人: NORDVEST EMBALLASJE AS
+Notify Party 通知方: LOTUS PAPER TRADING COMPANY LIMITED
+Port of Loading 装货港: CHITTAGONG
+Port of Discharge 卸货港: LE HAVRE
+Container Count 箱量: 16
+Gross Weight 毛重 (KGS): 11.000 MT
+
+Vessel/Voyage: MV HOLDOUT STAR 45W
+Freight: PREPAID

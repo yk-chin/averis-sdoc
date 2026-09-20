@@ -1,0 +1,10 @@
+{
+  "email_id": "holdout_018",
+  "from": "trafico@papelespacifico.example",
+  "subject": "DRAFT B/L _ HO-41007 _ LE HAVRE",
+  "body": "Hi,\n\nSee attached SI + draft BL for shipment HO-41007. Confirm or advise amendments.\n\nRgds",
+  "attachments": [
+    "attachments/holdout_018_SI.txt",
+    "attachments/holdout_018_BL.txt"
+  ]
+}

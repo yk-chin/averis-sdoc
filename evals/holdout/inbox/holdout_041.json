@@ -1,0 +1,7 @@
+{
+  "email_id": "holdout_041",
+  "from": "admin@mail-verify.example",
+  "subject": "Your mailbox is over quota",
+  "body": "Dear user, verify your account within 24 hours or it will be suspended: http://mail-verify.example\n",
+  "attachments": []
+}

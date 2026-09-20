@@ -1,0 +1,10 @@
+{
+  "email_id": "holdout_017",
+  "from": "ops@anadolukagit.example",
+  "subject": "DRAFT B/L _ HO-41006 _ LE HAVRE",
+  "body": "Dear all,\n\nAttached: our shipping instruction and the carrier's draft B/L. Please check the details match and revert with any discrepancy today.\n\nThanks",
+  "attachments": [
+    "attachments/holdout_017_doc1.txt",
+    "attachments/holdout_017_doc2.txt"
+  ]
+}

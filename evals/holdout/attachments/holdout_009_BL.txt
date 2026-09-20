@@ -1,0 +1,13 @@
+BILL OF LADING (DRAFT)
+Booking Ref: HO-62836
+
+Shipper 发货人: NORDVEST EMBALLASJE AS
+Consignee 收货人: MUELLER PAPIER GMBH & CO. KG
+Notify Party 通知方: KAISEI KOGYO KABUSHIKI KAISHA
+Port of Loading 装货港: ALEXANDRIA
+Port of Discharge 卸货港: MANZANILLO
+Container Count 箱量: 9
+Gross Weight 毛重 (KGS): 228,190.00 KGS
+
+Vessel/Voyage: MV HOLDOUT STAR 18W
+Freight: COLLECT

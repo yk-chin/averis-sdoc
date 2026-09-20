@@ -1,0 +1,13 @@
+BILL OF LADING (DRAFT)
+Booking Ref: HO-46915
+
+Shipper: Nordvest Emballasje AS
+Consignee: Southern Cross Fibre Pty Ltd
+Notify Party: Anadolu Kağıt Sanayi A.Ş.
+Port of Loading: LKCMB
+Port of Discharge: JPUKB
+Number of Containers: 9 x 40'HC
+Gross Weight (KGS): 151,496 KG
+
+Vessel/Voyage: MV HOLDOUT STAR 62W
+Freight: COLLECT

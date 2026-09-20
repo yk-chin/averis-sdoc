@@ -1,0 +1,13 @@
+BILL OF LADING (DRAFT)
+Booking Ref: HO-84631
+
+Shipper: NORDVEST EMBALLASJE AS
+Consignee: TBA
+Notify Party: SOUTHERN CROSS FIBRE PTY. LTD.
+Port of Loading: GENOA
+Port of Discharge: DURBAN
+Number of Containers: 6
+Gross Weight (KGS): 96.000 MT
+
+Vessel/Voyage: MV HOLDOUT STAR 31W
+Freight: COLLECT

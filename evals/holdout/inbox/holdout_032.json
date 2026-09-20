@@ -1,0 +1,7 @@
+{
+  "email_id": "holdout_032",
+  "from": "shipping@southerncrossfibre.example",
+  "subject": "Freight invoice query _ INV-9001",
+  "body": "Hi,\n\nInvoice INV-9001 shows THC at USD 180 per box but the quote was USD 150. Please issue a credit note.\n\nRegards",
+  "attachments": []
+}

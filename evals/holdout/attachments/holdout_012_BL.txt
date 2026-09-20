@@ -1,0 +1,13 @@
+BILL OF LADING (DRAFT)
+Booking Ref: HO-52628
+
+Shipper: QILIN PULP AND PAPER LIMITED
+Consignee: ANADOLU KAGIT SANAYI A.S.
+Notify Party: MAPLE LEAF PACKAGING INCORPORATED
+Port of Loading: DURBAN
+Port of Discharge: SANTOS
+Number of Containers: 4
+Gross Weight (KGS): 27,560 KG
+
+Vessel/Voyage: MV HOLDOUT STAR 73W
+Freight: COLLECT

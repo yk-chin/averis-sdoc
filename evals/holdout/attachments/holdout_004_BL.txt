@@ -1,0 +1,13 @@
+BILL OF LADING (DRAFT)
+Booking Ref: HO-38338
+
+Exporter: CARTIERE ADRIATICHE SPA
+Consigned To: HARBOUR VIEW LOGISTICS BV
+Also Notify: MAPLE LEAF PACKAGING INCORPORATED
+Loading Port: MANZANILLO
+Discharging Port: LE HAVRE
+Qty of Containers: 4
+Total Gross Weight: 134,229 KG
+
+Vessel/Voyage: MV HOLDOUT STAR 68W
+Freight: COLLECT

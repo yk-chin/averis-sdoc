@@ -1,0 +1,10 @@
+{
+  "email_id": "holdout_012",
+  "from": "spedizioni@cartiereadriatiche.example",
+  "subject": "DRAFT B/L _ HO-41001 _ SANTOS",
+  "body": "Hi team,\n\nPlease find attached the SI and the draft BL for booking HO-41001. Kindly compare and confirm the draft is in order before cut-off.\n\nRegards",
+  "attachments": [
+    "attachments/holdout_012_SI.txt",
+    "attachments/holdout_012_BL.txt"
+  ]
+}

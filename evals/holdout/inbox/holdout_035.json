@@ -1,0 +1,7 @@
+{
+  "email_id": "holdout_035",
+  "from": "export@lotuspaper.example",
+  "subject": "Payment of invoice INV-9004",
+  "body": "Hi,\n\nPlease confirm receipt of our payment for INV-9004 and send the official receipt.\n\nThanks",
+  "attachments": []
+}

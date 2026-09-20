@@ -1,0 +1,13 @@
+BILL OF LADING (DRAFT)
+Booking Ref: HO-85208
+
+Shipper/Exporter: CARTIERE ADRIATICHE SPA
+Consignee (complete name and address): ANADOLU KAGIT SANAYI A.S.
+Notify Party (if different): KAISEI KOGYO KABUSHIKI KAISHA
+Port of Loading (POL): KOBE
+Port of Discharge (POD): DURBAN
+Total Containers: 9
+Gross Wt: 105.328 MT
+
+Vessel/Voyage: MV HOLDOUT STAR 98W
+Freight: COLLECT

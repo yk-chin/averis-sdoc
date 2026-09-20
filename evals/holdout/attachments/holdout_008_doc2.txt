@@ -1,0 +1,13 @@
+BILL OF LADING (DRAFT)
+Booking Ref: HO-28091
+
+Shipper/Exporter: Maple Leaf Packaging Inc.
+Consignee (complete name and address): Qilin Pulp & Paper Ltd.
+Notify Party (if different): Delta Nile Trading LLC
+Port of Loading (POL): Haiphong (VNHPH)
+Port of Discharge (POD): Antwerp (BEANR)
+Total Containers: 23
+Gross Wt: 77.252 MT
+
+Vessel/Voyage: MV HOLDOUT STAR 88W
+Freight: PREPAID

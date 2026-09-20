@@ -1,0 +1,10 @@
+{
+  "email_id": "holdout_001",
+  "from": "ops@anadolukagit.example",
+  "subject": "RE: DRAFT BL CHECK _ HO-40000",
+  "body": "Hi team,\n\nPlease find attached the SI and the draft BL for booking HO-40000. Kindly compare and confirm the draft is in order before cut-off.\n\nRegards",
+  "attachments": [
+    "attachments/holdout_001_SI.txt",
+    "attachments/holdout_001_BL.txt"
+  ]
+}

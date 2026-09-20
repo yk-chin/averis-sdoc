@@ -1,0 +1,10 @@
+{
+  "email_id": "holdout_015",
+  "from": "export@lotuspaper.example",
+  "subject": "DRAFT B/L _ HO-41004 _ ALEXANDRIA",
+  "body": "Hello,\n\nDraft BL received from the line - attached together with the SI. Please verify shipper/consignee/notify, ports, container qty and gross weight.\n\nBest regards",
+  "attachments": [
+    "attachments/holdout_015_SI.txt",
+    "attachments/holdout_015_BL.txt"
+  ]
+}

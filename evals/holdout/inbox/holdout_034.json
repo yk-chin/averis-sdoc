@@ -1,0 +1,7 @@
+{
+  "email_id": "holdout_034",
+  "from": "docs@deltanile.example",
+  "subject": "Invoice not received _ HO-40003",
+  "body": "Hello,\n\nWe have not received the freight invoice for shipment HO-40003. Please send it for payment processing.\n\nRgds",
+  "attachments": []
+}

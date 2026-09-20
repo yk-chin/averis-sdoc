@@ -1,0 +1,10 @@
+{
+  "email_id": "holdout_009",
+  "from": "trafico@papelespacifico.example",
+  "subject": "RE: DRAFT BL CHECK _ HO-40008",
+  "body": "Hi team,\n\nPlease find attached the SI and the draft BL for booking HO-40008. Kindly compare and confirm the draft is in order before cut-off.\n\nRegards",
+  "attachments": [
+    "attachments/holdout_009_SI.txt",
+    "attachments/holdout_009_BL.txt"
+  ]
+}

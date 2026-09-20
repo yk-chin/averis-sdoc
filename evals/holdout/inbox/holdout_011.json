@@ -1,0 +1,10 @@
+{
+  "email_id": "holdout_011",
+  "from": "docs@kaisei-kogyo.example",
+  "subject": "DRAFT B/L _ HO-41000 _ DURBAN",
+  "body": "Hello,\n\nDraft BL received from the line - attached together with the SI. Please verify shipper/consignee/notify, ports, container qty and gross weight.\n\nBest regards",
+  "attachments": [
+    "attachments/holdout_011_doc1.txt",
+    "attachments/holdout_011_doc2.txt"
+  ]
+}

@@ -1,0 +1,13 @@
+BILL OF LADING (DRAFT)
+Booking Ref: HO-59496
+
+Shipper/Exporter: NORDVEST EMBALLASJE AS
+Consignee (complete name and address): MAPLE LEAF PACKAGING INCORPORATED
+Notify Party (if different): DELTA NILE TRADING L.L.C.
+Port of Loading (POL): SANTOS
+Port of Discharge (POD): Chittagong (BDCGP)
+Total Containers: 10
+Gross Wt: 238.000 MT
+
+Vessel/Voyage: MV HOLDOUT STAR 16W
+Freight: PREPAID

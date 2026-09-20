@@ -1,0 +1,9 @@
+{
+  "email_id": "holdout_024",
+  "from": "trafico@papelespacifico.example",
+  "subject": "Please compare SI and BL _ HO-42005",
+  "body": "Team,\n\nCompare the shipping instruction and the draft bill of lading and revert.\n\nThanks",
+  "attachments": [
+    "attachments/holdout_024_SI.txt"
+  ]
+}

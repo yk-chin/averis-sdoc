@@ -1,0 +1,10 @@
+{
+  "email_id": "holdout_016",
+  "from": "export@lotuspaper.example",
+  "subject": "DRAFT B/L _ HO-41005 _ ANTWERP",
+  "body": "Dear all,\n\nAttached: our shipping instruction and the carrier's draft B/L. Please check the details match and revert with any discrepancy today.\n\nThanks",
+  "attachments": [
+    "attachments/holdout_016_SI.txt",
+    "attachments/holdout_016_BL.txt"
+  ]
+}

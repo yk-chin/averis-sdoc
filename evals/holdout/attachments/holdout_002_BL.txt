@@ -1,0 +1,13 @@
+BILL OF LADING (DRAFT)
+Booking Ref: HO-51807
+
+Shipper: LOTUS PAPER TRADING COMPANY LIMITED
+Consignee: ANADOLU KAGIT SANAYI A.S.
+Notify Party: HARBOUR VIEW LOGISTICS BV
+Port of Loading: COLOMBO
+Port of Discharge: CHITTAGONG
+Number of Containers: 8 containers
+Gross Weight (KGS): 51735 kgs
+
+Vessel/Voyage: MV HOLDOUT STAR 22W
+Freight: COLLECT

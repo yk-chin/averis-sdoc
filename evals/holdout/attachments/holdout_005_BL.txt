@@ -1,0 +1,13 @@
+BILL OF LADING (DRAFT)
+Booking Ref: HO-82756
+
+Shipper: LOTUS PAPER TRADING COMPANY LIMITED
+Consignee: PAPELES DEL PACIFICO SA DE CV
+Notify Party: MUELLER PAPIER GMBH & CO. KG
+Port of Loading: DURBAN, ZADUR
+Port of Discharge: HAIPHONG, VNHPH
+Number of Containers: 24
+Gross Weight (KGS): 198,024 KG
+
+Vessel/Voyage: MV HOLDOUT STAR 55W
+Freight: PREPAID

@@ -1,0 +1,13 @@
+BILL OF LADING (DRAFT)
+Booking Ref: HO-36777
+
+Exporter: CARTIERE ADRIATICHE SPA
+Consigned To: ANADOLU KAGIT SANAYI A.S.
+Also Notify: LOTUS PAPER TRADING COMPANY LIMITED
+Loading Port: KOBE
+Discharging Port: MANZANILLO
+Qty of Containers: 5
+Total Gross Weight: 126.000 MT
+
+Vessel/Voyage: MV HOLDOUT STAR 87W
+Freight: COLLECT

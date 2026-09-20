@@ -1,0 +1,10 @@
+{
+  "email_id": "holdout_021",
+  "from": "docs@kaisei-kogyo.example",
+  "subject": "Draft BL attached _ HO-42002",
+  "body": "Hi,\n\nSI and draft BL attached, please verify.\n\nRgds",
+  "attachments": [
+    "attachments/holdout_021_SI.txt",
+    "attachments/holdout_021_BL.pdf"
+  ]
+}

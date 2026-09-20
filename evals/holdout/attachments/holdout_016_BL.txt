@@ -1,0 +1,13 @@
+BILL OF LADING (DRAFT)
+Booking Ref: HO-40896
+
+Shipper: MUELLER PAPIER GMBH & CO. KG
+Consignee: DELTA NILE TRADING L.L.C.
+Notify Party: QILIN PULP AND PAPER LIMITED
+Port of Loading: SANTOS
+Port of Discharge: ANTWERP
+Number of Containers: 2
+Gross Weight (KGS): 81.000 MT
+
+Vessel/Voyage: MV HOLDOUT STAR 29W
+Freight: COLLECT

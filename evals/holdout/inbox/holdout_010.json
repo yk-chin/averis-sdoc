@@ -1,0 +1,10 @@
+{
+  "email_id": "holdout_010",
+  "from": "traffic@mapleleafpkg.example",
+  "subject": "RE: DRAFT BL CHECK _ HO-40009",
+  "body": "Hello,\n\nDraft BL received from the line - attached together with the SI. Please verify shipper/consignee/notify, ports, container qty and gross weight.\n\nBest regards",
+  "attachments": [
+    "attachments/holdout_010_SI.xlsx",
+    "attachments/holdout_010_BL.txt"
+  ]
+}

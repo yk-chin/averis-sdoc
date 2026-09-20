@@ -1,0 +1,10 @@
+{
+  "email_id": "holdout_005",
+  "from": "traffic@mapleleafpkg.example",
+  "subject": "RE: DRAFT BL FOR CONFIRMATION _ HO-40004",
+  "body": "Hi,\n\nSee attached SI + draft BL for shipment HO-40004. Confirm or advise amendments.\n\nRgds",
+  "attachments": [
+    "attachments/holdout_005_SI.xlsx",
+    "attachments/holdout_005_BL.txt"
+  ]
+}

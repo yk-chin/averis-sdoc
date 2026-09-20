@@ -1,0 +1,7 @@
+{
+  "email_id": "holdout_033",
+  "from": "shipping@southerncrossfibre.example",
+  "subject": "RE: Invoice INV-9002 discrepancy",
+  "body": "Dear finance,\n\nThe local charges on invoice INV-9002 do not match the agreed tariff. Kindly check and revise.\n\nThanks",
+  "attachments": []
+}

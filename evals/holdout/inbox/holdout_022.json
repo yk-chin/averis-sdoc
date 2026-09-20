@@ -1,0 +1,10 @@
+{
+  "email_id": "holdout_022",
+  "from": "export@lotuspaper.example",
+  "subject": "Docs for HO-42003",
+  "body": "Hello,\n\nPlease compare the SI with the draft BL attached.\n\nThanks",
+  "attachments": [
+    "attachments/holdout_022_SI.txt",
+    "attachments/holdout_022_BL.txt"
+  ]
+}
