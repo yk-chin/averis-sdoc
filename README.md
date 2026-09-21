@@ -91,8 +91,8 @@ Design invariants:
 ## Why a mismatch costs money (the business case, to be sized with Averis at Workshop 2)
 
 - **Consignee wrong on a negotiable (to-order) B/L** — the bill is the document of title; once issued and in circulation, cargo can be released against it to the wrong party. That is a title risk, not a delay.
-- **Gross weight wrong** — the verified gross mass (SOLAS VGM) is a mandatory declaration; a wrong figure can mean the box is refused at the terminal, re-weighed, or rolled to the next sailing.
-- **Any field differing from the letter of credit** — under UCP 600 a documentary discrepancy lets the issuing bank refuse the documents; the practical costs are a discrepancy fee per presentation and, worse, payment delayed for weeks while documents are corrected and re-presented.
+- **Gross weight wrong** — the B/L gross weight feeds the cargo manifest and advance cargo filings (e.g. US ISF/AMS, EU ICS2), the commercial documents presented under a documentary credit, and weight-based freight and handling charges. (It is not the SOLAS verified gross mass, which also includes the container's tare; a wrong B/L weight is a documentary and customs problem, not a VGM one.)
+- **Documentary credits** — when a draft B/L departs from the shipper's instruction, it is likely to conflict with the commercial invoice and packing list prepared from the same instruction. Under UCP 600 Art. 14(d), data need not be identical across documents but must not conflict; a conflict is a discrepancy that entitles the issuing bank to refuse, with a discrepancy fee per presentation and payment delayed while documents are corrected.
 - **Amending a B/L after issue** — carriers charge an amendment fee per correction and the correction may miss the documentation cut-off, so the shipment rolls over.
 
 The subject lines in this inbox carry `LC`, `DP`, `CFR`, `OA` — payment terms and Incoterms. The system does not yet read them; when it does, an LC shipment with a mismatch is the one to escalate first. Indicative cost model and sensitivity: `docs/ROI.md`.
