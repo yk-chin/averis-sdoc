@@ -1,0 +1,30 @@
+{
+  "_note": "Inputs for scripts/roi.py. Three scenarios: conservative / central / optimistic. 'source' says where a number comes from; 'assumed' means nobody has confirmed it. Averis answers are from Workshop 2, 21 Sep 2026 (verbal, indicative) and are quoted verbatim in docs/ROI.md.",
+  "averis_workshop2": {
+    "AVERIS_CHECKS_PER_WEEK": "UNKNOWN (answer 'maybe around 20 till 30' - unit not established, not used)",
+    "AVERIS_CORRECTIONS_PER_WEEK": "UNKNOWN",
+    "AVERIS_ESCAPED_PER_QUARTER": "UNKNOWN (not answered)",
+    "AVERIS_COST_PER_ESCAPED_RM": "UNKNOWN (not answered)",
+    "AVERIS_MINUTES_PER_CHECK": "up to 10 for the comparison; the whole process takes longer",
+    "AVERIS_STAFF_COST": "UNKNOWN",
+    "AVERIS_FALSE_ALARM_REACHES_CARRIER": "UNKNOWN (not answered)"
+  },
+  "scenarios": ["conservative", "central", "optimistic"],
+  "inputs": {
+    "V":      {"values": [80, 150, 250],        "unit": "comparisons per working day", "source": "assumed (Averis Q1 answer 'maybe around 20 till 30' had no unit established)"},
+    "D":      {"values": [250, 250, 250],       "unit": "working days per year",        "source": "assumed"},
+    "t_h":    {"values": [6, 8, 10],            "unit": "minutes per manual check",     "source": "Averis, Workshop 2, 21 Sep 2026 (verbal, indicative): 'up to 10 minutes for the comparison, the whole process takes longer' - 10 taken as the upper bound, 6-8 assumed"},
+    "c_h":    {"values": [30, 35, 40],          "unit": "RM per staff hour, fully loaded", "source": "assumed"},
+    "p_d":    {"values": [0.10, 0.15, 0.209],   "unit": "share of comparisons with a real discrepancy", "source": "assumed; organiser data 46/220 = 0.209"},
+    "m_h":    {"values": [0.02, 0.05, 0.08],    "unit": "share of real discrepancies a manual check misses", "source": "assumed (no cited source)"},
+    "N_esc":  {"values": [null, null, null],    "unit": "errors found after B/L issue per year", "source": "Averis Q2 - not answered"},
+    "m_s":    {"values": [0.01, 0, 0],          "unit": "silent-miss rate: emails with a real discrepancy marked OK", "source": "measured 0 on v2 and hold-out (both hold-out FNs were escalated); 1 % stress in the conservative case"},
+    "c_miss": {"values": [150, 400, 1000],      "unit": "RM per escaped error, end to end", "source": "assumed (Averis Q2 not answered)"},
+    "r_esc":  {"values": [0.24, 0.091, 0.091],  "unit": "share of comparisons escalated to a person", "source": "measured: hold-out 6/25, v2 20/220"},
+    "t_r":    {"values": [5, 3, 2],             "unit": "minutes to review one escalation with the evidence panel", "source": "assumed"},
+    "r_fa":   {"values": [0.20, 0.05, 0],       "unit": "share of comparisons flagged as MISMATCH wrongly", "source": "hold-out 5/25 (adversarial) / assumed / v2 0"},
+    "t_fa":   {"values": [5, 5, 3],             "unit": "minutes to dismiss one false alarm", "source": "assumed"},
+    "c_fa":   {"values": [50, 0, 0],            "unit": "RM external cost of a false alarm that reaches the carrier", "source": "assumed (Averis Q3 routing not answered); 0 when a specialist confirms before anything is sent"},
+    "c_sys":  {"values": [0.03, 0.02, 0.01],    "unit": "RM system cost per comparison", "source": "measured: 55 % of emails make one flash-lite call; comparisons are free"}
+  }
+}

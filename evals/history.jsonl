@@ -31,3 +31,4 @@
 {"ts": "2026-09-20T19:13:30", "sha": "3feee93", "final_score": 1.0, "stage1_macro_f1": 1.0, "defect_f1": 1.0, "end_to_end": 1.0, "esc_precision": 1.0}
 {"ts": "2026-09-20T19:14:50", "sha": "090049e", "final_score": 1.0, "stage1_macro_f1": 1.0, "defect_f1": 1.0, "end_to_end": 1.0, "esc_precision": 1.0}
 {"ts": "2026-09-20T19:20:13", "sha": "7481989", "final_score": 1.0, "stage1_macro_f1": 1.0, "defect_f1": 1.0, "end_to_end": 1.0, "esc_precision": 1.0}
+{"ts": "2026-09-21T19:57:22", "sha": "1fe9c55", "final_score": 1.0, "stage1_macro_f1": 1.0, "defect_f1": 1.0, "end_to_end": 1.0, "esc_precision": 1.0}

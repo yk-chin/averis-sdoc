@@ -45,6 +45,8 @@ Counter-measures, in order of strength: the six perturbations (`docs/PERTURBATIO
 - `scripts/holdout_eval.py` runs the pipeline on it and scores with **our re-implementation** of the four axes (the organiser's formulas are not published); `final` is the unweighted mean. Rules-only by default (reproducible without credentials); `--llm` for the shipped hybrid.
 - Results are committed as they come out (`evals/holdout_result*.json`, misses listed). **No code change is made in response to a hold-out result.** If a miss is fixed for other reasons, a new hold-out is authored before it is counted.
 
+**Protocol note (21 Sep).** The final round re-uses the organiser's v2 dataset. The hold-out stays frozen. If any registered hold-out root cause is fixed after the preliminary round, `evals/holdout/` is re-labelled a *development set* from that commit on, and its post-fix score is reported as such — never as an independent estimate.
+
 ## Why Docker rather than score_cli
 
 `/submit` returns only the scoreboard; `ground_truth` is never returned by any endpoint

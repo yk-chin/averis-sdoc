@@ -1,115 +1,58 @@
-# Final-Round Risk Checklist
+# Risk register
 
-> Status: final_score 1.0000 on the v2 dataset (classification / defects / end-to-end / escalation all full marks).
-> This checklist answers one question: **which of today's fixes depend on the specific shape of this dataset, and how do they break on different data?**
-> Each item states: assumption -> location -> what happens if it fails (which metric) -> likelihood -> recommended action.
-> Ordered by impact x likelihood x cost to fix.
+Status vocabulary: **Mitigated** (evidence in the repo), **Open** (known, not fixed), **Accepted** (known, will not fix),
+**Partially** (fix in code, operational step incomplete). Every Mitigated row points at a commit, a test or an eval file;
+statuses were re-verified against the code on 2026-09-21 (file:line in the Evidence column). Fixes for Open items are
+scheduled after the preliminary round under the hold-out protocol in `EVAL.md`.
 
----
+## Pipeline and comparison core
 
-## P0 - must do before the final
+| ID | Risk | Status | Evidence | Residual risk |
+|---|---|---|---|---|
+| R1 | LLM availability: 288/520 emails need a classification call; free-tier quota was exhausted on 19 Sep | **Mitigated** | Vertex AI through the service account in the cloud (`docs/DEPLOY.md`), `GET /health?deep=1` exercises it live; model fallback chain + 60 s cooldown (`pipeline/classify_llm.py`); on total failure the rules decide and the evidence says so (`decided_by: rule`). AI Studio (`LLM_PROVIDER=aistudio`) exists as a second provider but switching is by environment variable, not automatic | Ablation `rules_only` = 0.8433 (`evals/ablation.json`) is the floor if every model is down; `min-instances=1` during judging |
+| R2 | Attachment routing by filename tag only | **Mitigated** | Content-fingerprint fallback (`pipeline/run.py:57`); perturbation P5 (all tags removed) = 1.000 (`evals/perturbation.json`) | An attachment whose text carries neither heading nor recognisable fields is left unassigned → `wrong_doc_type` escalation (safe direction) |
+| R3 | Party similarity exactly on the 0.75 threshold (`APRIL FINE PAPER TRADING` vs `… (MIDDLE EAST) FZE`) | **Mitigated** | Structural prefix rule before the score (`shipdoc_core/compare.py:119-123`), `tests/test_core.py` | Pairs that are neither prefix-related nor clearly apart still land in the grey zone → a person (by design) |
+| R4 | UN/LOCODE table size | **Open** | 47 entries (`len(_LOCODE_NAME)`, `shipdoc_core/normalize.py`), grown from 22; P4b = 1.000 on the organiser's codes | Codes outside the table are compared as names — see R-P1. Production answer: the full UNECE list, versioned |
+| R5 | PDF interleave artefact recognised for one label only | **Accepted** | `pipeline/parse_doc.py:49-53`, honestly labelled as a data-artefact patch; all v2 cases pass; the eight-line patch is not a structural gap | A different interleaved label in the final data → garbled value → grey zone / escalation, not a silent pass |
+| R6 | Value on the line after `Label:` | **Mitigated** | Record model takes the next non-label line (`pipeline/parse_doc.py:92-105`, confidence capped 0.9); tests in `tests/test_pipeline_rules.py` | Multi-line addresses beyond one continuation line are cut (party names survive; addresses are stripped anyway) |
+| R7 | The no-attachment comparison-request rule branch never reaches the LLM | **Accepted** | `pipeline/classify.py:91` ("DELIBERATELY FINAL"), rule P/R 1.0 on the 96 emails on that path; test proves the LLM is not called | One invoice email phrased as "please confirm the documents" would be misclassified (≈ 0.003 macro-F1) |
+| R8 | Subject ignored by the rules | Accepted | `own_text()` reads the body; the LLM prompt includes the subject | none observed |
+| R9 | Quoted-mail truncation on `From:` / `Original Message` | Accepted | `pipeline/classify.py:36`; not present in v2 | A body with "From:" mid-sentence loses its tail |
+| R10 | Word lists in the missing-attachment intent check | Accepted | `DOCS_REQUESTED_PAT` / `DOCS_IN_HAND_PAT` (`pipeline/classify.py:42-46`); ambiguity escalates (safe) | esc_precision, never a silent OK |
+| R11 | SI_REQUEST semantics inferred from gold consistency | Accepted | v2 macro-F1 1.0; same generator in the final | Low |
+| R12 | Weight tolerance 0.1 % / 0.5 kg | Accepted | `shipdoc_core/compare.py:41-42`, policy stated in every reason and in `docs/REVIEW_REASONS.md`; smallest planted defect 500 kg | A 10 kg real difference would pass as formatting |
+| R13 | Port-name equivalence by token-set containment | Accepted | `ports_match` (`shipdoc_core/normalize.py:394`) | `PORT` alone never occurs |
+| R14 | Same name, different code → MISMATCH | Accepted | name takes precedence; internal inconsistency treated as a defect | Two legitimate codes for one port would false-alarm (rare) |
+| R15 | Rule-layer quality without the LLM | Accepted | ablation rules-only 0.8433, macro-F1 0.48 | This is R1's floor, not a target |
+| R16 | Time budget on the free tier | Mitigated | Vertex, `LLM_MIN_INTERVAL=0`; 520 emails in 3.8 s with a warm cache (`docs/PERFORMANCE.md`) | Cold cache after a container restart: 288 calls |
+| R17 | Scanned / image-only PDFs | **Mitigated (proposal only)** | `pipeline/vision.py`: Gemini vision proposal capped at 0.60 < review threshold, provisional comparison, decision stays `unreadable`; `tests/test_vision.py`; 512/513/514 verified live | A proposal never auto-passes, so a scan-heavy final lowers end-to-end but cannot false-alarm; corrupt files (511/515) stay unreadable |
 
-### R1. LLM availability: a single point of failure for the whole classification layer
-- **Assumption**: at least one Gemini model is reachable when the eval runs.
-- **Location**: `pipeline/classify_llm.py`; the 288 emails (55 %) with `conf < 0.80` in `run.py` depend on it entirely.
-- **If it fails**: everything falls back to rules -> macro-F1 drops from 1.00 to **0.58** (final -0.13). Measured today: on the free key `gemini-3.6-flash` / `3.5-flash` returned 503/429 almost the whole time; 286/288 emails were carried by `3.5-flash-lite`; Wi-Fi dropped for 40 minutes mid-run and 126 emails failed.
-- **Likelihood**: high. Free tier + a single Wi-Fi connection; final-day conditions are out of our control.
-- **Actions**:
-  1. **Switch to Vertex** (`.env` already has `GCP_PROJECT`; set `LLM_PROVIDER=vertex`, run `gcloud auth application-default login` locally) - paid quota, no rate limiting, `LLM_MIN_INTERVAL=0`. **The Vertex path has never been exercised and must be smoke-tested in advance.**
-  2. Keep the AI Studio key as a second provider (the code is currently either/or; automatic switching needs ~15 lines).
-  3. **The first thing** to do with the final data is a full pipeline run to fill the cache, before any debugging.
+## Found by the hold-out (`evals/holdout_result_llm.json`; frozen, not tuned on)
 
-### R2. Attachment routing relies entirely on the filename tags `_SI.` / `_BL.`
-- **Assumption**: SI/BL attachment filenames contain `_SI.` / `_BL.` (100 % of the 250 v2 attachments do).
-- **Location**: `run.py` `classify_attachments()` / `has_si` / `has_bl` in `decide()`.
-- **If it fails** (`SI_5RSG-19787.pdf`, `draft-bl.docx`, `docs.pdf`): `has_si = has_bl = False` -> every comparison request becomes `missing_attachment` or (if the body is a request for files) OK -> **end-to-end goes to zero, esc_precision collapses**. The most brittle single thread in the whole chain.
-- **Likelihood**: medium. Same organiser, same generator, probably reused; but the existence of `edgecases.py` shows they deliberately deform things.
-- **Action**: when the filename tag fails, fall back to a **content fingerprint** - `parse_doc.detect_doc_type()` already recognises SI/BL from the text; `classify_attachments()` just needs "filename first, content as fallback". ~15 lines + 3 tests. **Recommended now.**
+| ID | Risk | Status | Evidence | Residual risk |
+|---|---|---|---|---|
+| **R-P1** | A bare UN/LOCODE outside our table is compared as a *name* — even when the other side carries the same code (`COLOMBO (LKCMB)` vs `LKCMB`) | **Open** | holdout_003 / holdout_010 false alarms; `ports_match` name-first logic; violates invariant 2 ("unsure → a human") | Planned post-prelim: fail-closed — unknown code on one side → `UNDETERMINED` (a person), equal codes → match; holdout_010 additionally needs the full table |
+| **R-P2** | Legal forms and connectors beyond our suffix table: `K.K.` ↔ `KABUSHIKI KAISHA`, `&` ↔ `AND` | **Open** | holdout_001 / 009 / 014 (K.K.), 012 / 016 (`&`) | Post-prelim: connector normalisation and a few legal-form synonyms; production: ISO 20275 entity-legal-form codes |
+| **R-P3** | When one field is undecidable, a confident mismatch in another field is escalated but not listed in `defect_fields` | **Open** | `pipeline/run.py` returns `escalate("missing_value", …)` before `mismatched_fields` is read; holdout_012 (gross weight) / 016 (shipper) | The email still reaches a person (no silent miss); needs one v2 black-box check before changing, because it alters the submission record shape for grey-zone emails |
+| R-P4 | Label abbreviations outside the alias list (`Shpr`, `Cnee`, `G.Wt.`) | Open (roadmap) | holdout_007 → `missing_value` escalation, never a guess | A deterministic shipping-abbreviation table; a constrained LLM label mapper (output limited to the seven keys or none, confidence capped 0.60) |
 
-### R3. Company-name similarity sits exactly on the threshold
-- **Assumption**: different legal entities have similarity <= 0.75; spelling variants of the same entity >= 0.94.
-- **Location**: `shipdoc_core/compare.py` `PARTY_FUZZY_LOW = 0.75` / `HIGH = 0.94`.
-- **Measured**: `APRIL FINE PAPER TRADING` vs `APRIL FINE PAPER TRADING (MIDDLE EAST) FZE` has similarity **exactly 0.750** and is judged MISMATCH only thanks to `<=` (email_145, confirmed a gold defect). Among the 27 entities in the data pool this is the only pair on the grey-zone edge.
-- **If it fails**: the same pair spelled slightly differently in the final (one extra comma) -> 0.76 -> UNDETERMINED -> `NEEDS_REVIEW/missing_value` -> that email is **an e2e miss and an escalation false positive at once**, hurting two axes.
-- **Likelihood**: high. Both entities are in the generator's shipper pool; the final will almost certainly contain them again.
-- **Action**: add a deterministic rule before the fuzzy match - **one name is a prefix of the other and the extra part contains a legal qualifier** (`(MIDDLE EAST)`, `FZE`, `SDN BHD`, `PTE LTD` ...) -> MISMATCH directly (different legal entities). No threshold change, no effect on other pairs. ~10 lines + 2 tests.
+## Service, security, operations
 
----
+| ID | Risk | Status | Evidence | Residual risk |
+|---|---|---|---|---|
+| R-S1 | Anonymous `POST /process` could shadow an organiser email (`/report/{email_id}` returns the newest doc; the console lists prefix `email_`) | **Mitigated** | `RESERVED_PREFIX` check in `api/main.py process()` → 422 without a valid API key; `tests/test_api_security.py` | Keyed callers can still overwrite a dataset email on purpose (that is the refresh path) |
+| R-S2 | Reviewer identity (verified email) shown publicly by `GET /report/{id}` | **Mitigated** | `_public_view()` masks `review.reviewer` / `identity.email`, drops request ids; `tests/test_api_security.py` | The authenticated review response keeps the full identity by design |
+| R-S3 | Anonymous uploads kept indefinitely | **Mitigated** | `expire_at = now + 24 h` on anonymous `/process` documents only (test); Firestore TTL policy `reports.expire_at` enabled 21 Sep (`docs/SECURITY.md`) | TTL deletion runs within ~24 h of expiry, not at the second |
+| R-S4 | One shared API key for batch / DLQ / chaos; reviewer name client-asserted | Mitigated | Separate review-only token; OIDC bearer → verified identity; `identity` recorded in the audit trail (commit `2f6d578`) | Production: every read behind an identity (`docs/SECURITY.md`) |
+| R-D1 | Unpinned dependencies (`>=` ranges), no lock file | **Open** | `requirements.txt`; `google-auth` now declared directly | No rebuild during the judging window; a lock file is to be generated inside a Linux container (Windows `pip freeze` drags platform packages) |
+| R-A1 | `/reports` reads all documents on every call | **Accepted** | 608 ms p50 at 520 docs (`evals/bench.json`); console ISR 15 s | Scaling path in `docs/PERFORMANCE.md` (server-side filters, composite index, cursor pagination, `count()`) |
+| R-A2 | Cloud Tasks concurrency fixed at 3 | **Accepted** | Quota-bound by design: keeps first-time Vertex calls under the model's rate limit; 520 emails in ≈ 8 min, 0 failures | Derivation of the rate knob in `docs/PERFORMANCE.md` |
+| R-A3 | Cold start 3–6 s | Mitigated (judging window) | `min-instances=1` set 20 Sep (`docs/DEPLOY.md`) | Costs ≈ USD 1.5–2 / day; switch back after judging |
+| R-B1 | SI/BL pairing not checked (a BL for booking A compared with the SI of booking B) | Open (roadmap) | No booking-reference field in the ontology | Planned: a non-verdict `pairing_warning` when booking refs differ |
+| R-B2 | Incoterms / LC awareness for prioritisation | Open (roadmap) | Subjects carry `LC`, `DP`, `CFR`, `OA`; not read | An LC shipment with a mismatch should escalate first (`docs/ROI.md`) |
 
-## P1 - recommended before the final, cheap
+## Order of work after the preliminary round
 
-### R4. The port-code table has only 22 entries
-- **Assumption**: port values look like `NAME, COUNTRY (CODE)` and the name is always present.
-- **Location**: `normalize.py` `_LOCODE_NAME`; after today's change to **name over code**, the code only matters when one side has no name.
-- **Measured**: 32 codes occur in the data, **24 are not in the table**. Nothing broke today only because every value carried a name.
-- **If it fails** (one side writes only `KEMBA`, the other `MOMBASA, KENYA`): the bare unknown code is treated as a name `KEMBA` -> not equal to `MOMBASA` -> **false MISMATCH**.
-- **Action**: add the 24 codes from the data using their **real UN/LOCODE** meanings (they cannot be reverse-engineered from the data - mappings such as `AUFRE->BUSAN`, `KEMBA->TUTICORIN` are the organiser's planted defects). 10 minutes.
-
-### R5. `_deinterleave` recognises one interleave prefix only
-- **Assumption**: the PDF character-interleave artefact only ever hits the `Notify Party/Intermediate Consignee` label.
-- **Location**: `pipeline/parse_doc.py` `INTERLEAVED_LABEL = ^Party/Intermediate\s+Cons…`.
-- **If it fails** (interleave on `Shipper/Exporter` or `Consignee`): the value becomes garbage -> fuzzy similarity ~0.3 -> **false MISMATCH**, and 3 emails at a minimum (the generator plants 3-5 of each edge case).
-- **Action**: generalise the test - value has both cases, >= 3 upper-case letters remain after dropping lower-case, and the lower-case letters in order are a substring of a known label alias -> drop lower-case and recover. ~15 lines + tests. Medium cost, recommended.
-
-### R6. Value on the line after `Label:`
-- **Assumption**: `Label: Value` on one line (100 % of v2; only 3 empty-value lines, all placeholders).
-- **Location**: `parse_doc.py` `LABEL_LINE`; an empty value -> `BLANK` -> `missing_value` escalation.
-- **If it fails** (`Shipper:\nABC CO LTD`): all seven fields count as "missing" -> the whole email becomes `NEEDS_REVIEW/missing_value` -> **e2e miss + escalation false positive**, and systematically (every email).
-- **Action**: when the value is empty and the next line is not a label line, take the next line as the value. ~6 lines + 1 test.
-
-### R7. The rule branch for comparison requests has no LLM review
-- **Assumption**: a body matching `COMPARE_PAT` (check/verify/confirm ... BL/documents) is always BL_COMPARISON.
-- **Location**: `classify.py` returns 0.80 >= threshold - **the only non-attachment path that never goes to the LLM**.
-- **If it fails** (an invoice email says "please confirm the documents for invoice 123"): misclassified as BL_COMPARISON, and with no attachments -> intent check -> most likely OK; one misclassification costs ~0.003 macro-F1.
-- **Likelihood**: medium-low. None of the 75 v2 invoice emails match.
-- **Action**: acceptable; or lower the no-attachment confidence to 0.79 so the LLM reviews it, at +91 calls per run. **Recommended once on Vertex.**
-
----
-
-## P2 - awareness only, no action for now
-
-### R8. `own_text()` ignores the subject entirely
-- The rule layer never looks at the subject (only when the body is empty). If a final-round class had bodies like "See subject", the rules would be unsure -> LLM (which does see the subject). Covered, acceptable.
-
-### R9. Quoted-mail truncation
-- `QUOTED_PAT` cuts at `From:` / `_____` / `Original Message`. A body containing "From: Port Klang" mid-sentence would lose its tail. Not present in v2. Acceptable.
-
-### R10. Word lists in the missing-attachment intent check
-- `DOCS_REQUESTED_PAT` = send/provide/share/forward/resend/issue; `DOCS_IN_HAND_PAT` = attached/enclosed/compare/check/verify/confirm. Both hit or neither hit -> **escalate by default** (the safe direction: only esc_precision suffers, never final). Acceptable.
-
-### R11. The SI_REQUEST semantic assumption
-- Labelling the 95 "Please find Shipping instruction for X" emails SI_REQUEST was **inferred** from gold consistency, not defined by the organiser. Verified correct on v2; same generator in the final, low risk.
-
-### R12. Weight tolerance 0.1 %
-- The smallest planted weight defect in v2 is 500 kg (distribution: 500x3 / 1000x6 / 2000x3), far above the tolerance. A 10 kg difference in the final would be missed. Low likelihood - the generator uses round thousands/hundreds.
-
-### R13. Port-name equivalence = token-set containment
-- `PORT KLANG WESTPORT ⊇ PORT KLANG` is the same port. In theory `PORT SAID` vs `PORT` would match too - but a bare `PORT` never occurs. Acceptable.
-
-### R14. Same name, different code -> MISMATCH
-- `SINGAPORE (SGSIN)` vs `SINGAPORE (SGSIN)` is fine; two legitimate codes for the same port (rare) would false-alarm. Acceptable.
-
-### R15. Rule-layer quality without the LLM
-- `INVOICE_PAT` is hit by "3 Original invoice" inside SI bodies - the main reason R1 degrades to 0.58. Getting 0.8+ without an LLM would need the regex to exclude the "Documents Required" block. This is R1's fallback plan; unnecessary if Vertex is stable.
-
-### R16. Time budget
-- At `LLM_MIN_INTERVAL=6.5`, 520 emails take ~31 minutes; a re-run after a network drop resumes from cache. Zero on Vertex.
-
-### R17. Scanned / image-only PDFs
-- No OCR. An image PDF -> `office_to_text` empty -> `unreadable` escalation (safe direction). All 5 v2 unreadable cases were caught. If the final uses many scans, e2e falls but nothing false-alarms.
-
----
-
-## Suggested order of work
-
-| # | Item | Estimate | Needs |
-|---|---|---|---|
-| 1 | R1 Vertex smoke test | 10 min | `gcloud` login on this machine (you) |
-| 2 | R2 content-fingerprint fallback for attachments | 20 min | - |
-| 3 | R3 legal-qualifier rule | 15 min | - |
-| 4 | R4 extend the port-code table | 10 min | - |
-| 5 | R6 value on the next line | 10 min | - |
-| 6 | R5 generalise the interleave fix | 20 min | - |
-| 7 | Full regression: 51 tests + eval still 1.0 | 5 min | - |
-
-After every step run `python scripts/eval.py .\data --server http://localhost:8080`; roll back immediately if any axis drops.
+1. R-P1 (fail-closed unknown code), then R-P2, then R-P3 — each with one v2 black-box check; the hold-out becomes a development set from the first of these commits (`EVAL.md`).
+2. A second hold-out authored by someone who has not read the rules.
+3. R-D1 lock file in a Linux container; R-B1 pairing warning.

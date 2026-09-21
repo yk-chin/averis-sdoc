@@ -1,9 +1,9 @@
 {
- "ts": "2026-09-20T19:20:13",
- "sha": "7481989",
+ "ts": "2026-09-21T19:57:22",
+ "sha": "1fe9c55",
  "scores": {
-  "ts": "2026-09-20T19:20:13",
-  "sha": "7481989",
+  "ts": "2026-09-21T19:57:22",
+  "sha": "1fe9c55",
   "final_score": 1.0,
   "stage1_macro_f1": 1.0,
   "defect_f1": 1.0,
@@ -117,12 +117,12 @@
   "decided_by_llm": 288,
   "llm_share": 0.5538,
   "llm_models_cached": {
-   "gemini-3.5-flash-lite": 272,
+   "gemini-3.5-flash-lite": 503,
    "gemini-3.6-flash": 2
   },
   "llm_models_this_run": {},
   "vision_documents": 6,
-  "scoring_runs_recorded": 33,
-  "distinct_code_versions_scored": 27
+  "scoring_runs_recorded": 34,
+  "distinct_code_versions_scored": 28
  }
 }

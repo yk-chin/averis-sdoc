@@ -6,7 +6,7 @@ Averis × Monash Hackathon 2026 — shipping-document intake for a BPO documenta
 
 **LLM proposes, the deterministic core disposes.** Gemini does what a model is good at — understanding an ambiguous email, reading a scanned page — and a pure, auditable core does what a verdict needs: normalise, compare, keep the evidence, escalate only what a person must see. The ablation below shows why that split is the better answer, not the cautious one.
 
-An email arrives. ShipDoc classifies it, parses the attached Shipping Instruction (SI) and draft Bill of Lading (BL), compares the seven fields that matter, and escalates only what a person genuinely needs to look at — **without creating false alarms**.
+An email arrives. ShipDoc classifies it, parses the attached Shipping Instruction (SI) and draft Bill of Lading (BL), compares the seven fields that matter, and escalates only what a person genuinely needs to look at — built not to create false alarms (none on the organiser's data; the hold-out below shows where that still fails).
 
 **Live API:** https://shipdoc-api-705106212012.asia-southeast1.run.app (Cloud Run, Singapore; LLM via Vertex AI)
 **Console:** https://averis-sdoc-k3ce.vercel.app — `web/`, Next.js on Vercel (inbox · diff report with raw → normalised view · exception / incomplete queues · eval dashboard)
@@ -23,7 +23,7 @@ An email arrives. ShipDoc classifies it, parses the attached Shipping Instructio
 
 Precisely: these scores are **1.0 on the organiser's v2 dataset and on six semantics-preserving perturbations of it** (below). They are not a claim about unseen data; `docs/FINAL_ROUND_RISKS.md` lists what could break on different data.
 
-Trajectory: 0.766 (rules only) → 0.890 (LLM fallback) → 0.891 (intent-aware escalation) → 1.000 (comparison fixes). See `evals/history.jsonl` and `evals/progress.png`.
+Trajectory: 0.766 (first rules baseline) → 0.890 (LLM fallback) → 0.891 (intent-aware escalation) → 1.000 (comparison fixes). See `evals/history.jsonl` and `evals/progress.png`. The ablation's rules-only row (0.8433) uses today's rules and comparator, which is why the two numbers differ.
 
 Six semantics-preserving perturbations of the dataset (label synonyms, company-suffix spelling, weight units, UN/LOCODE vs port names, untagged attachment names) all score 1.000 after hardening — `docs/PERTURBATION_REPORT.md`.
 
@@ -91,8 +91,8 @@ Design invariants:
 ## Why a mismatch costs money (the business case, to be sized with Averis at Workshop 2)
 
 - **Consignee wrong on a negotiable (to-order) B/L** — the bill is the document of title; once issued and in circulation, cargo can be released against it to the wrong party. That is a title risk, not a delay.
-- **Gross weight wrong** — the verified gross mass (SOLAS VGM) is a mandatory declaration; a wrong figure can mean the box is refused at the terminal, re-weighed, or rolled to the next sailing.
-- **Any field differing from the letter of credit** — under UCP 600 a documentary discrepancy lets the issuing bank refuse the documents; the practical costs are a discrepancy fee per presentation and, worse, payment delayed for weeks while documents are corrected and re-presented.
+- **Gross weight wrong** — the B/L gross weight feeds the cargo manifest and advance cargo filings (e.g. US ISF/AMS, EU ICS2), the commercial documents presented under a documentary credit, and weight-based freight and handling charges. (It is not the SOLAS verified gross mass, which also includes the container's tare; a wrong B/L weight is a documentary and customs problem, not a VGM one.)
+- **Documentary credits** — when a draft B/L departs from the shipper's instruction, it is likely to conflict with the commercial invoice and packing list prepared from the same instruction. Under UCP 600 Art. 14(d), data need not be identical across documents but must not conflict; a conflict is a discrepancy that entitles the issuing bank to refuse, with a discrepancy fee per presentation and payment delayed while documents are corrected.
 - **Amending a B/L after issue** — carriers charge an amendment fee per correction and the correction may miss the documentation cut-off, so the shipment rolls over.
 
 The subject lines in this inbox carry `LC`, `DP`, `CFR`, `OA` — payment terms and Incoterms. The system does not yet read them; when it does, an LC shipment with a mismatch is the one to escalate first. Indicative cost model and sensitivity: `docs/ROI.md`.
@@ -116,7 +116,7 @@ data/
 
 ```bash
 python pipeline/run.py ./data submission.json      # pipeline → submission.json
-python -m pytest tests/ -q                          # 78 tests
+python -m pytest tests/ -q                          # the full suite (count shown by CI)
 python -m uvicorn api.main:app --port 8090          # the API locally
 ```
 
@@ -150,7 +150,9 @@ The inbox data is the organiser's dataset loaded into our own Firestore with `sc
 | rules only | 0.6248 | 0.486 | 0.667 | 0.680 | 0.67 / 1.00 |
 | **hybrid (shipped)** | **0.7416** | 0.953 | 0.667 | 0.680 (0.48–0.83) | 0.67 / 1.00 |
 
-  The 9 misses are listed in `evals/holdout_result_llm.json`: company-suffix synonyms beyond our table (K.K. ↔ Kabushiki Kaisha), UN/LOCODEs outside our 45 codes when one side gives only the code, label abbreviations outside our alias list, and grey-zone parties routed to a person rather than called a mismatch. They are reported, not patched: patching them would turn the hold-out into a training set. They are the roadmap.
+  The 9 misses (`evals/holdout_result_llm.json`) trace to four root causes, registered in `docs/FINAL_ROUND_RISKS.md`. **Five of the nine are false alarms** (defect precision 0.56): on out-of-distribution data the dominant failure is over-flagging, not missing.
+  (1) **Port given only as a UN/LOCODE** — when one side carries a bare code outside our table, it is compared as a *name*, even when the other side carries the same code (holdout_003: `COLOMBO (LKCMB)` vs `LKCMB`). This violates invariant 2 and is registered as R-P1. (2) **Legal forms and connectors beyond our table** — `K.K.` ↔ `KABUSHIKI KAISHA`, `&` ↔ `AND` (R-P2). (3) **Label abbreviations** outside the alias list (`Shpr`, `Cnee`, `G.Wt.`) — escalated, never guessed. (4) **Aggregation** — when one field is undecidable, a confident mismatch in another field is escalated but not listed in `defect_fields` (R-P3). Plus one classification miss.
+  No hold-out miss is silent: both missed defects sat in escalated emails. They are reported, not patched, per the hold-out protocol in `EVAL.md`.
 - **AI usage on the inbox**: rules decide 232 emails, Gemini 288 (55.4 %); vision proposals for the 6 scanned documents. Recorded per run in `evals/metrics_latest.json` (`ai_usage`).
 - **Performance**: pipeline 7–10 ms per email in process; API p50 17 ms locally, ~200 req/s per core; Cloud Run p50 85–110 ms from Malaysia — `docs/PERFORMANCE.md`.
 
@@ -206,6 +208,11 @@ Deployment details, runtime identity, and the redeploy command: `docs/DEPLOY.md`
 
 ## Documents
 
-- `docs/FINAL_ROUND_RISKS.md` — the dataset-shape assumptions behind each fix and what breaks if the final-round data differs
+- `docs/FINAL_ROUND_RISKS.md` — the risk register (status, evidence, residual risk per item)
 - `docs/PERTURBATION_REPORT.md` — perturbation tests before / after hardening
-- `EVAL.md` — the evaluation loop
+- `docs/ROI.md` — the cost model, its correction, and the Averis inputs
+- `docs/PERFORMANCE.md` — measured latency / throughput and the scaling path
+- `docs/REVIEW_REASONS.md` — how the four official review reasons map to concrete causes; the weight-tolerance policy
+- `docs/DEPLOY.md` — Cloud Run / Cloud Tasks / Firestore / Vercel deployment, secrets, observability
+- `docs/SECURITY.md` — the public surface in demo mode, masking, retention, production plan
+- `EVAL.md` — the evaluation loop, threats to validity, hold-out protocol

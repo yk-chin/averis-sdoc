@@ -258,7 +258,8 @@ def test_request_id_is_echoed_and_persisted():
     client = TestClient(m.app)
     r = client.post("/process", json=_email("rid-1"), headers={"X-Request-Id": "trace-abc-123"})
     assert r.headers["X-Request-Id"] == "trace-abc-123" and r.json()["request_id"] == "trace-abc-123"
-    assert client.get("/report/rid-1").json()["request_id"] == "trace-abc-123"
+    assert m.store.get(REPORTS, r.json()["key"])["request_id"] == "trace-abc-123"      # stored for tracing
+    assert "request_id" not in client.get("/report/rid-1").json()                       # never shown publicly
     r2 = client.get("/health")
     assert len(r2.headers["X-Request-Id"]) == 32                       # minted when absent
     r3 = client.get("/health", headers={"X-Request-Id": "bad id with spaces"})
