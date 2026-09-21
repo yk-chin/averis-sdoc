@@ -49,3 +49,25 @@ under the model's rate limit; the 3-attempt / dead-letter policy is the safety n
 
 Before `min-instances=1`, a cold request to Cloud Run took 3–6 s (Python + FastAPI + google-cloud clients import);
 warm requests are the table above. `min-instances=1` is set for the judging window (docs/DEPLOY.md).
+
+## Scaling path
+
+**`/reports` (today: one ordered read of every document, filtered in Python; 608 ms at 520 docs).**
+Move the filters server-side: `where(category ==)`, `where(status ==)` with a composite index
+`(category, status, updated DESC)` — plus `(status, updated DESC)` for the queues page — and cursor pagination with
+`start_after(last_updated)` at a page size the console actually renders (50). Counts for the header tiles come from
+Firestore's `count()` aggregation query, not from reading rows. **Not** a single summary document: Firestore sustains
+roughly one write per second per document, so a shared counter touched by every task would contend during a batch
+(200 tasks in a few minutes); if pre-aggregation is ever needed, use sharded counters (N shards, sum on read).
+Expected: sub-100 ms per page independent of inbox size.
+
+**Cloud Tasks dispatch (today: `max-concurrent-dispatches=3`, chosen so 288 first-time Vertex calls stay under the
+model's rate limit).** The right knob is the rate: `max_dispatches_per_second ≈ 0.8 × Q / 60`, where Q is the model's
+requests-per-minute quota (0.8 leaves headroom for retries and the console's own calls). The useful concurrency then
+follows from Little's law, `L = λ × W`: at λ = 2 requests/s and W ≈ 1.5 s per uncached call, L ≈ 3 in flight — which
+is why 3 was the correct setting for the current quota, and why it scales linearly with Q. For guaranteed capacity
+(a customer SLA rather than a shared quota), Vertex AI Provisioned Throughput reserves model capacity per project;
+the dispatch rate is then set from the reserved throughput instead of the shared limit.
+
+**Pipeline compute** is not on the critical path: 7–10 ms per email in process, ≈ 200 req/s per Cloud Run vCPU;
+horizontal scaling is `max-instances`, and the deterministic core is stateless.
