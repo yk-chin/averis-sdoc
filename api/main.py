@@ -30,7 +30,7 @@ Failure handling ("handle processing failures visibly and allow retries"):
   same email never produces a second report.
 """
 from __future__ import annotations
-import base64, collections, json, logging, os, pathlib, re, sys, tempfile, threading, time, uuid
+import base64, collections, datetime, json, logging, os, pathlib, re, sys, tempfile, threading, time, uuid
 from typing import Any, Literal, Optional
 
 from fastapi import FastAPI, Header, HTTPException, Request
@@ -52,6 +52,8 @@ API_TOKEN = os.getenv("API_TOKEN", "").strip()
 REVIEW_TOKEN = os.getenv("REVIEW_TOKEN", "").strip()       # review-only credential: cannot batch, retry or chaos
 MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
 RATE_LIMIT_PER_MIN = int(os.getenv("RATE_LIMIT_PER_MIN", "10"))   # anonymous POST /process, per client IP
+RESERVED_PREFIX = "email_"           # the organiser's inbox namespace: anonymous callers cannot write into it
+ANON_RETENTION_H = 24                # anonymous /process uploads carry expire_at (Firestore TTL policy on `reports`)
 KEYED_ENDPOINTS = ["POST /batch", "GET /failures", "GET /failures/{key}", "POST /failures/{key}/retry",
                    "POST /report/{id}/review", "POST /admin/chaos"]
 
@@ -266,18 +268,27 @@ def health(deep: int = 0):
 
 
 @app.post("/process", summary="Process one email synchronously: decision + per-field evidence (no key needed, rate-limited)")
-def process(email: EmailIn, request: Request):
+def process(email: EmailIn, request: Request, x_api_key: Optional[str] = Header(default=None)):
     _rate_limit(request)
     e = _email_dict(email)
     request.state.email_id = e["email_id"]
+    keyed = bool(API_TOKEN) and x_api_key == API_TOKEN
+    if e["email_id"].startswith(RESERVED_PREFIX) and not keyed:
+        # Anonymous writes must not shadow the organiser's inbox: /report/{email_id} returns the newest document
+        # and the console lists prefix email_. The team can still refresh a dataset email with the API key.
+        raise HTTPException(422, f"email_id prefix '{RESERVED_PREFIX}' is reserved for the organiser dataset; "
+                                 "use another id (e.g. demo-001)")
     try:
         result = _process_email(e)
     except ValueError as ex:
         raise HTTPException(422, str(ex))
     key = idempotency_key(e)
-    store.set(REPORTS, key, {"status": "DONE", "email_id": e["email_id"], "key": key, "result": result,
-                             "email": _email_summary(e), "attempts": 1, "error": None, "updated": now(),
-                             "request_id": request.state.request_id})
+    doc = {"status": "DONE", "email_id": e["email_id"], "key": key, "result": result,
+           "email": _email_summary(e), "attempts": 1, "error": None, "updated": now(),
+           "request_id": request.state.request_id}
+    if not keyed:                    # anonymous upload: kept ANON_RETENTION_H hours, then removed by the TTL policy
+        doc["expire_at"] = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=ANON_RETENTION_H)
+    store.set(REPORTS, key, doc)
     return dict(result, key=key, request_id=request.state.request_id)
 
 
@@ -386,12 +397,30 @@ def reports(limit: int = 1000, category: Optional[str] = None, status: Optional[
     return {"count": len(rows), "items": rows}
 
 
+def _public_view(r: dict) -> dict:
+    """What an anonymous reader may see of a report: no traceback, no request ids, sender and reviewer
+    identities masked. The review fields the console depends on (reviewer as a string, identity.method /
+    identity.verified, corrections, decisions) are kept."""
+    r = dict(r)
+    r.pop("traceback", None)
+    r.pop("request_id", None)
+    if r.get("email"):
+        r["email"] = dict(r["email"], **{"from": _mask_email(r["email"].get("from"))})
+    if r.get("review"):
+        rev = dict(r["review"])
+        rev.pop("request_id", None)
+        if rev.get("reviewer") and "@" in rev["reviewer"]:
+            rev["reviewer"] = _mask_email(rev["reviewer"])
+        if isinstance(rev.get("identity"), dict) and rev["identity"].get("email"):
+            rev["identity"] = dict(rev["identity"], email=_mask_email(rev["identity"]["email"]))
+        r["review"] = rev
+    return r
+
+
 @app.get("/report/{ident}", summary="Result by idempotency key or email_id")
 def report(ident: str):
     key, r = _find_report(ident)
-    r.pop("traceback", None)                         # never part of a public response
-    if r.get("email"):
-        r["email"] = dict(r["email"], **{"from": _mask_email(r["email"].get("from"))})
+    r = _public_view(r)
     r["key"] = key
     r["effective_decision"] = _effective_decision(r)
     return r
