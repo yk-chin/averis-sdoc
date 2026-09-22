@@ -44,25 +44,26 @@ LLM-only classifies perfectly and *still* loses: it sends **111 of 220 compariso
 ```mermaid
 flowchart LR
   subgraph intake["Intake"]
-    E[Email + attachments] --> R{Rules on the body\nconf ≥ 0.80?}
-    R -- yes --> C[category]
-    R -- no --> G[Gemini classify\nstructured output, cached]
+    E["Email + attachments"] --> R{"Rules on the body<br/>conf >= 0.80?"}
+    R -- "yes" --> C["category"]
+    R -- "no" --> G["Gemini classify<br/>structured output, cached"]
     G --> C
-    E --> A[Attachments\nfilename tag › content fingerprint]
-    A --> P[Deterministic parser\ntxt · pdf · docx · xlsx]
-    P -- no text --> V[Gemini vision proposal\nconfidence ≤ 0.60]
+    E --> A["Attachments<br/>filename tag, then content fingerprint"]
+    A --> P["Deterministic parser<br/>txt, pdf, docx, xlsx"]
+    P -- "no text" --> V["Gemini vision proposal<br/>confidence capped at 0.60"]
   end
   subgraph core["Deterministic core (no LLM, no network)"]
-    P --> N[alias resolution → normalisation]
-    V -. provisional .-> N
-    N --> K[field-by-field compare\nevidence per verdict]
-    K --> D[OK · MISMATCH + fields · NEEDS_REVIEW\nmissing_attachment / unreadable / wrong_doc_type / missing_value]
+    P --> N["alias resolution, normalisation"]
+    V -. "provisional" .-> N
+    N --> K["field-by-field compare<br/>evidence per verdict"]
+    K --> D["OK / MISMATCH + fields / NEEDS_REVIEW<br/>missing_attachment, unreadable, wrong_doc_type, missing_value"]
   end
   subgraph cloud["Cloud"]
-    D --> CR[Cloud Run API\nrequest ids, structured logs]
-    CR --> CT[Cloud Tasks\n3 attempts, backoff] --> FS[(Firestore\nreports · dead_letter · review)]
-    CR --> VX[Vertex AI]
-    FS --> VC[Vercel console\ninbox · diff board · queues · eval · human review]
+    D --> CR["Cloud Run API<br/>request ids, structured logs"]
+    CR --> CT["Cloud Tasks<br/>3 attempts, backoff"]
+    CT --> FS[("Firestore<br/>reports, dead_letter, review")]
+    CR --> VX["Vertex AI"]
+    FS --> VC["Vercel console<br/>inbox, diff board, queues, eval, human review"]
   end
 ```
 
