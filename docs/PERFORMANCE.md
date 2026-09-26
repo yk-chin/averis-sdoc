@@ -26,7 +26,7 @@ Single uvicorn worker; the service is CPU-bound on JSON + regex, saturating arou
 (A first run against `localhost` showed a flat 2.06 s per request: Windows tries IPv6 `::1` first and falls back.
 Measure against `127.0.0.1`; the number above is the API's.)
 
-## API, Cloud Run (1 vCPU / 1 GiB, concurrency 20, `min-instances=1` during judging)
+## API, Cloud Run (1 vCPU / 1 GiB, concurrency 20; measured with `min-instances=1`, the judging-window setting)
 
 | Endpoint | n | p50 | p95 | p99 |
 |---|---|---|---|---|
@@ -47,8 +47,9 @@ under the model's rate limit; the 3-attempt / dead-letter policy is the safety n
 
 ## Cold start
 
-Before `min-instances=1`, a cold request to Cloud Run took 3–6 s (Python + FastAPI + google-cloud clients import);
-warm requests are the table above. `min-instances=1` is set for the judging window (docs/DEPLOY.md).
+A cold request to Cloud Run takes 3–6 s (Python + FastAPI + google-cloud clients import); warm requests are the
+table above. `min-instances=1` removed cold starts during the judging window (22 Sep) and was set back to 0 on
+26 Sep, so the service is back to scale-to-zero and the first request after an idle period pays that cost again.
 
 ## Scaling path
 

@@ -47,7 +47,7 @@ scheduled after the preliminary round under the hold-out protocol in `EVAL.md`.
 | R-D1 | Unpinned dependencies (`>=` ranges), no lock file | **Open** | `requirements.txt`; `google-auth` now declared directly | No rebuild during the judging window; a lock file is to be generated inside a Linux container (Windows `pip freeze` drags platform packages) |
 | R-A1 | `/reports` reads all documents on every call | **Accepted** | 608 ms p50 at 520 docs (`evals/bench.json`); console ISR 15 s | Scaling path in `docs/PERFORMANCE.md` (server-side filters, composite index, cursor pagination, `count()`) |
 | R-A2 | Cloud Tasks concurrency fixed at 3 | **Accepted** | Quota-bound by design: keeps first-time Vertex calls under the model's rate limit; 520 emails in ≈ 8 min, 0 failures | Derivation of the rate knob in `docs/PERFORMANCE.md` |
-| R-A3 | Cold start 3–6 s | Mitigated (judging window) | `min-instances=1` set 20 Sep (`docs/DEPLOY.md`) | Costs ≈ USD 1.5–2 / day; switch back after judging |
+| R-A3 | Cold start 3–6 s | Accepted (outside a judging window) | `min-instances=1` during judging (20–26 Sep), back to 0 on 26 Sep (`docs/DEPLOY.md`) | The first request after an idle period pays 3–6 s; set `min-instances=1` again for any demo or pilot |
 | R-B1 | SI/BL pairing not checked (a BL for booking A compared with the SI of booking B) | Open (roadmap) | No booking-reference field in the ontology | Planned: a non-verdict `pairing_warning` when booking refs differ |
 | R-B2 | Incoterms / LC awareness for prioritisation | Open (roadmap) | Subjects carry `LC`, `DP`, `CFR`, `OA`; not read | An LC shipment with a mismatch should escalate first (`docs/ROI.md`) |
 
